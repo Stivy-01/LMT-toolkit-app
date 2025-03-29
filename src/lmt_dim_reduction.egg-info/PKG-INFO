@@ -1,0 +1,347 @@
+Metadata-Version: 2.2
+Name: lmt-dim-reduction
+Version: 0.1.0
+Summary: LMT Dimensionality Reduction Analysis Toolkit
+Author-email: Andrea Stivala <andreastivala.as@gmail.com>
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.8
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.23.5
+Requires-Dist: scipy>=1.9.0
+Requires-Dist: pandas>=1.5.0
+Requires-Dist: scikit-learn>=1.0.0
+Requires-Dist: matplotlib>=3.5.0
+Requires-Dist: seaborn>=0.12.0
+Requires-Dist: plotly>=5.10.0
+Requires-Dist: streamlit>=1.22.0
+Requires-Dist: sqlite3worker>=1.1.0
+Requires-Dist: pillow>=9.0.0
+Requires-Dist: st-annotated-text>=3.0.0
+Requires-Dist: tkcalendar>=1.6.1
+
+# LMT Dimensionality Reduction Toolkit with Streamlit Interface
+
+A comprehensive toolkit for analyzing and visualizing mouse behavior data from the Live Mouse Tracker (LMT) system, now featuring an interactive Streamlit web application for easier access and analysis.
+
+## 📋 Project Components
+
+This project consists of two main parts:
+
+1. **Core LMT Analysis Toolkit**: A Python package for behavioral data analysis
+2. **Streamlit Web Application**: An interactive UI for the toolkit
+
+## 🌟 Key Features
+
+- **Database Connectivity**: Streamlined access to SQLite database files of any size
+- **Flexible Data Structure**: Support for various LMT database schemas and naming conventions
+- **Thread-Safe Operations**: Robust multi-threaded operation for Streamlit environment
+- **Dimensionality Reduction**: Advanced PCA and LDA analysis of behavioral features
+- **Interactive Visualization**: Dynamic plots and charts with Plotly integration
+- **Comprehensive Documentation**: Detailed guides and explanations of all features
+
+## 🧠 Analysis Capabilities
+
+- **Event Filtering**: Clean and filter raw event data from the LMT system
+- **Feature Extraction**: Extract meaningful behavioral features from events
+- **Statistical Analysis**: Compute statistical metrics and correlations
+- **Dimensionality Reduction**: Reduce feature dimensions while preserving patterns
+- **Behavioral Patterns**: Identify characteristic behavior profiles and identity domains
+
+## 🔧 Technical Highlights
+
+### Thread-Safe Database Access
+
+The application implements a sophisticated connection pooling system to overcome SQLite threading limitations in Streamlit:
+
+```python
+# Connection pool for thread-safe SQLite access
+_connection_pool = {}
+_thread_local = threading.local()
+
+# Thread-aware database connection
+thread_id = threading.get_ident()
+thread_key = f"{normalized_path}_{thread_id}"
+```
+
+### Adaptive Database Structure Compatibility
+
+The toolkit adaptively handles various database schemas:
+
+```python
+# Detect and work with either EVENT or EVENTS tables
+has_event = 'EVENT' in tables or 'EVENTS' in tables
+
+# Identify alternative tables when standard structure is missing
+alternatives = [t for t in tables_found if t.lower() == 'animal' or 'animal' in t.lower()]
+```
+
+### Windows Path Handling
+
+Special handling for Windows paths with spaces and special characters:
+
+```python
+# Normalize Windows paths properly
+path = path.replace('\\', '/')
+path = path.replace('//', '/')
+path = os.path.normpath(path)
+```
+
+## 📂 Directory Structure
+
+```
+.
+├── streamlit_app/             # Streamlit application files
+│   ├── app.py                 # Main entry point
+│   ├── pages/                 # Multi-page components
+│   │   ├── 1_📊_Database_Management.py
+│   │   └── ...               # Other pages (to be added)
+│   ├── utils/                 # Utility functions
+│   │   ├── db_utils.py        # Database utilities
+│   │   ├── analysis_utils.py  # Analysis functions
+│   │   └── visualization_utils.py  # Visualization tools
+│   └── README.md              # App-specific documentation
+├── src/                       # Core toolkit source code
+│   ├── analysis/              # Analysis algorithms
+│   ├── behavior/              # Behavior processing
+│   ├── preprocessing/         # Data preprocessing tools
+│   ├── visualization/         # Visualization utilities
+│   └── utils/                 # Core utilities
+├── data/                      # Sample data and outputs
+├── docs/                      # Documentation
+│   ├── readme.md              # Core toolkit documentation
+│   └── requirements.txt       # Dependency list
+└── SETUP_GUIDE.md             # Setup instructions
+```
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Python 3.9 or higher
+- SQLite database from LMT experiments
+
+### Installation
+
+1. **Create and activate a virtual environment**
+   ```bash
+   python -m venv env
+   
+   # Windows
+   .\env\Scripts\activate
+   
+   # macOS/Linux
+   source env/bin/activate
+   ```
+
+2. **Install dependencies in the correct order**
+   ```bash
+   pip install numpy>=1.23.5
+   pip install scipy>=1.9.0
+   pip install streamlit>=1.22.0
+   pip install -r streamlit_app/requirements.txt
+   pip install -e .
+   ```
+
+3. **Run the Streamlit application**
+   ```bash
+   streamlit run streamlit_app/app.py
+   ```
+
+## 📊 Streamlit App Components
+
+### Database Management
+
+The database management system provides:
+
+- **Direct File Path Connection**: Connect to databases of any size using file paths
+- **Path Format Handling**: Support for various path formats and special characters
+- **Database Structure Analysis**: Validation of database schema with detailed diagnostics
+- **SQL Query Interface**: Run SQL queries against the database
+- **Table Exploration**: Browse database tables and view their structure
+
+### Thread-Safe Database Utilities
+
+The `db_utils.py` module implements:
+
+- **Connection Pooling**: Thread-specific connections to overcome SQLite limitations
+- **Automatic Reconnection**: Seamless handling of thread-related errors
+- **Safe Query Execution**: Thread-aware query functions
+- **Error Recovery**: Graceful recovery from common database errors
+
+### Working with Large Databases
+
+For databases larger than Streamlit's 200MB upload limit:
+
+1. Use the **Direct File Path** option
+2. Enter the full path to your database file
+3. If needed, use the **Path Format Converter** for Windows paths
+4. The app will validate the database and show its structure
+
+### Database Structure Flexibility
+
+The app works with various LMT database schemas:
+
+- **Standard Structure**: Expects tables like ANIMAL, EVENT, DETECTION, etc.
+- **Alternative Recognition**: Automatically detects and adapts to alternative table names
+- **Minimal Requirements**: Only requires ANIMAL and EVENT/EVENTS tables to function
+- **Structure Diagnostics**: Shows detailed report of database structure and compatibility
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+#### Thread-Related Errors
+- **Symptom**: "SQLite objects created in a thread can only be used in that same thread"
+- **Solution**: The app automatically reconnects. If error persists, refresh the page.
+
+#### Path Format Issues
+- **Symptom**: "File not found" error with Windows paths
+- **Solution**: Use the Path Format Converter to transform your path to a compatible format.
+
+#### Database Schema Issues
+- **Symptom**: "Not a valid LMT database" error
+- **Solution**: Check the tables found in your database. The app now accepts EVENT instead of EVENTS.
+
+## 📚 Documentation
+
+- **Streamlit App README**: `streamlit_app/README.md`
+- **Core Toolkit Documentation**: `docs/readme.md`
+- **Setup Guide**: `SETUP_GUIDE.md`
+
+## 📝 License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](docs/LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Live Mouse Tracker project for providing the data collection system
+- Forkosh et al. 2019 for the methodological approach to behavioral analysis
+
+## 🔍 Overview
+
+This Streamlit application enables researchers to:
+
+- Upload and explore LMT database files
+- Preprocess and filter behavioral events
+- Apply dimensionality reduction techniques (PCA/LDA)
+- Create interactive visualizations of behavioral data
+- Identify and analyze behavioral patterns across mice
+
+## 📋 Requirements
+
+- Python 3.9 or higher
+- LMT SQLite database files
+- Packages listed in `streamlit_app/requirements.txt`
+
+## 🚀 Installation & Setup
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/lmt-toolkit-streamlit
+   cd lmt-toolkit-streamlit
+   ```
+
+2. **Create a virtual environment**
+   ```bash
+   # Create a virtual environment
+   python -m venv streamlit_env
+   
+   # Activate the environment
+   # Windows:
+   .\streamlit_env\Scripts\activate
+   # macOS/Linux:
+   source streamlit_env/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   # Install core dependencies in the correct order
+   pip install numpy>=1.23.5
+   pip install scipy>=1.9.0
+   pip install streamlit>=1.22.0
+   
+   # Install app-specific requirements
+   pip install -r streamlit_app/requirements.txt
+   
+   # Install the LMT toolkit package
+   pip install -e .
+   ```
+
+4. **Run the Streamlit app**
+   ```bash
+   streamlit run streamlit_app/app.py
+   ```
+
+5. **Access the app**
+   
+   Open your web browser and go to http://localhost:8501
+
+## 📚 Directory Structure
+
+```
+.
+├── streamlit_app/             # Streamlit application files
+│   ├── app.py                 # Main app entry point
+│   ├── pages/                 # Multi-page app components
+│   │   ├── 1_📊_Database_Management.py
+│   │   └── ...               # Other pages
+│   ├── utils/                 # Utility functions
+│   │   ├── db_utils.py        # Database utilities
+│   │   ├── analysis_utils.py  # Analysis functions
+│   │   └── visualization_utils.py  # Visualization tools
+│   ├── assets/                # Static assets
+│   └── requirements.txt       # App-specific dependencies
+├── src/                       # Core LMT toolkit source code
+├── data/                      # Sample data and outputs
+├── docs/                      # Documentation
+└── SETUP_GUIDE.md             # Detailed setup instructions
+```
+
+## 📖 Usage
+
+1. Start the app with `streamlit run streamlit_app/app.py`
+2. Navigate to the Database Management page to connect to an LMT database
+3. Use the Preprocessing tools to filter events and extract features
+4. Apply dimensionality reduction using PCA or LDA in the Analysis page
+5. Create and export visualizations in the Visualization page
+
+### Working with Large Databases (>200MB)
+
+This application supports databases of any size through the direct file path method:
+
+1. Instead of uploading files (which has a 200MB limit), use the "Connect via File Path" option
+2. Simply enter the full path to your database file on your local system
+3. The app will access the file directly without uploading it, bypassing size limitations
+
+For checking database sizes before using them with the app, use the included utility:
+
+```bash
+# Check a specific database file
+python streamlit_app/utils/file_size_checker.py --file /path/to/your/database.db
+
+# Check all database files in a directory
+python streamlit_app/utils/file_size_checker.py --dir /path/to/your/database/folder
+```
+
+## 🧪 Sample Data
+
+For testing purposes, you can use the sample database file located at:
+
+- `data/sample/sample_lmt.db` (if available)
+
+## 📝 License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](docs/LICENSE) file for details.
+
+## 🔗 Related Resources
+
+- [Live Mouse Tracker](https://github.com/fdechaumont/lmt-analysis) - Original LMT project
+- [Forkosh et al., 2019](https://www.nature.com/articles/s41593-019-0516-y) - Identity domains capture individual differences from across the behavioral repertoire
+
+## 👥 Contact
+
+For support, contributions, or inquiries, please contact:
+Andrea Stivala (andreastivala.as@gmail.com) 

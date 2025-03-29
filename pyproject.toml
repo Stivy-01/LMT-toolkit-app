@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmt-dim-reduction"
+version = "0.1.0"
+description = "LMT Dimensionality Reduction Analysis Toolkit"
+authors = [
+    {name = "Andrea Stivala", email = "andreastivala.as@gmail.com"},
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+classifiers = [  # MOVED HERE
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.8",
+]
+dependencies = [
+    "numpy>=1.23.5",
+    "scipy>=1.9.0",
+    "pandas>=1.5.0",
+    "scikit-learn>=1.0.0",
+    "matplotlib>=3.5.0",
+    "seaborn>=0.12.0",
+    "plotly>=5.10.0",
+    "streamlit>=1.22.0",
+    "sqlite3worker>=1.1.0",
+    "pillow>=9.0.0",
+    "st-annotated-text>=3.0.0",
+    "tkcalendar>=1.6.1",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["database", "utils", "analysis", "behavior"]
+
+[tool.setuptools.dynamic]
+version = {attr = "src.__version__"}

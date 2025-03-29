@@ -1,0 +1,43 @@
+# Core dependencies with specific versions for Python 3.9+ (Streamlit compatible)
+pandas>=1.5.3
+numpy>=1.23.5
+scipy>=1.9.0  # Required for linear algebra operations
+scikit-learn>=1.0.0  # Required for PCA, preprocessing, etc.
+plotly>=5.13.0  # Required for visualization
+tkcalendar>=1.6.1  # Required for date selection UI
+seaborn>=0.12.2  # Required for visualization
+
+# Streamlit specific dependencies
+streamlit>=1.22.0  # Streamlit framework
+altair>=4.2.0  # For Streamlit visualizations
+st-annotated-text>=4.0.0  # For enhanced text display
+
+# Optional performance improvements
+numexpr>=2.8.4  # Improves pandas performance
+bottleneck>=1.3.5  # Improves pandas performance
+
+# Development dependencies
+pytest>=7.0.0  # For running tests
+setuptools>=65.0.0  # For package installation
+
+# Note: The following are part of Python's standard library and don't need installation:
+# - sqlite3
+# - pathlib
+# - tkinter
+# - datetime
+# - json
+# - logging
+# - collections
+# - sys
+# - os
+# - re
+# - glob
+# - warnings
+# - argparse
+# - itertools
+
+# Installation order (important):
+# 1. pip install numpy>=1.23.5  # Install numpy first
+# 2. pip install scipy>=1.9.0  # Install scipy before scikit-learn
+# 3. pip install streamlit>=1.22.0  # Install Streamlit
+# 4. pip install -r requirements.txt  # Install remaining packages 

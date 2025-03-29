@@ -1,0 +1,33 @@
+# Streamlit Application Requirements
+# Python 3.9+ required
+
+# Core dependencies required for the LMT Toolkit
+numpy>=1.23.5
+scipy>=1.9.0
+pandas>=1.5.3
+scikit-learn>=1.0.0
+plotly>=5.13.0
+seaborn>=0.12.2
+
+# Streamlit and related packages
+streamlit>=1.22.0
+altair>=4.2.0
+st-annotated-text>=4.0.0
+streamlit-aggrid>=0.3.4  # For interactive tables
+streamlit-plotly-events>=0.0.6  # For interactive Plotly charts
+streamlit-extras>=0.2.7  # Additional Streamlit components
+watchdog>=3.0.0  # For improved reloading experience
+
+# Database handling
+sqlalchemy>=2.0.0  # For SQL database operations
+sqlite-utils>=3.35  # For SQLite utilities
+
+# Specific LMT project dependencies
+# These should be installed via pip install -e . from the main project directory
+
+# Installation instructions:
+# 1. Create a virtual environment: python -m venv streamlit_env
+# 2. Activate: .\streamlit_env\Scripts\activate (Windows) or source streamlit_env/bin/activate (Unix/MacOS)
+# 3. Install these requirements: pip install -r streamlit_app/requirements.txt
+# 4. Install the LMT toolkit package: pip install -e .
+# 5. Run the app: streamlit run streamlit_app/app.py 

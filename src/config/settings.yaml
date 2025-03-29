@@ -1,0 +1,458 @@
+# Computational Ethology Pipeline Configuration
+
+# System Parameters
+system:
+  max_ram_gb: 10
+  temporal_resolution_sec: 2
+  frame_rate: 30  # fps
+  chunk_size: 100000  # rows per processing chunk
+  biological_validity_threshold: 0.99
+  memory_management:
+    max_chunk_memory_gb: 6  # Maximum memory per chunk
+    warning_threshold_gb: 7.8  # Warning threshold for total memory
+    emergency_threshold_gb: 9  # Emergency threshold to trigger cleanup
+    reduce_factor: 0.5  # Factor to reduce chunk size if memory exceeds threshold
+  gpu_settings:
+    max_memory_fraction: 0.8
+    enable_fp16: true
+
+# Temporal Parameters
+temporal:
+  sequence_window: 600  # Increased to 10 minutes to capture longer behavioral episodes
+  minimum_event_duration: 0.5  # Keep minimum duration as is
+  max_gap: 120  # Increased to 2 minutes to allow for natural pauses
+  overlap: 0.5  # Keep overlap ratio as is
+  min_events_per_hour: 10
+  analysis_epoch: 600
+  mu_duration: 10.0  # Increased to better match average event durations
+
+# Training Parameters
+training:
+  sequence_length: 50  # Length of input sequences
+  train_test_ratio: 0.8  # Proportion of data for training
+  batch_size: 32
+  learning_rate: 0.001
+  temporal_split: true  # Use temporal splitting instead of random
+
+# Validation Parameters
+validation:
+  min_sequences: 100  # Minimum number of sequences required for analysis
+  max_sequences: 300000  # Maximum number of sequences to use (increased to handle full dataset)
+  expected_baselines:
+    daily_self_grooming: [120, 300]  # Seconds/day (Kalueff et al., 2016)
+    huddle_duration: [1800, 7200]    # Typical huddling range
+    approach_rate: [5, 15]           # Approaches/hour in stable groups
+  max_duration_percentile: 99  # Threshold for removing extreme duration outliers
+  min_coverage_hours: 1  # Minimum hours of data needed per animal
+  min_unique_animals: 2  # Minimum number of animals needed for analysis
+  required_event_types: ['social', 'individual', 'spatial']  # Required behavioral categories
+  min_sequence_events: 5  # Minimum events in a valid sequence
+  max_sequence_gap: 300  # Maximum gap (seconds) between events in sequence
+  min_social_events: 3  # Minimum social events per sequence
+  outlier_threshold: 3.0  # Standard deviations for outlier detection
+
+# Circadian Parameters
+circadian_params:
+  light_phase_start: 7  # 7 AM
+  light_phase_end: 19   # 7 PM
+  experiment_duration: 72  # hours
+
+# Biological Event Taxonomy
+event_taxonomy:
+  events:
+    # Investigation Behaviors
+    'Oral-genital Contact':
+      weight: 3.0  # High dominance assertion (Saito et al., 2014; Grant & Mackintosh, 1963)
+      primary_category: 'social'
+      sub_category: 'investigation'
+      description: 'High-intensity social investigation behavior'
+      requires_validation: true
+      avg_duration: 1.3  # seconds
+      references: ['Saito et al., 2014', 'Grant & Mackintosh, 1963']
+    
+    'Oral-oral Contact':
+      weight: 2.8  # Social investigation (Crawley et al., 2007)
+      primary_category: 'social'
+      sub_category: 'investigation'
+      description: 'Face-to-face social investigation'
+      requires_validation: true
+      avg_duration: 1.3  # seconds
+      references: ['Crawley et al., 2007']
+    
+    # Approach Behaviors
+    'Approach':
+      weight: 2.0  # General social behavior (Blanchard et al., 2001)
+      primary_category: 'social'
+      sub_category: 'initiative'
+      description: 'General approach behavior'
+      requires_validation: false
+      avg_duration: 3.2  # seconds
+      variants:
+        - name: 'Approach rear'
+          weight_modifier: 0.3  # 2.3 final weight (higher than basic approach due to exploratory component)
+          context: 'exploration'
+          description: 'Approach ending in rearing behavior'
+        - name: 'Social approach'
+          weight_modifier: 0.5  # 2.5 final weight
+          context: 'social_initiative'
+          description: 'Directed approach toward another animal'
+    
+    # Contact Behaviors
+    'Contact':
+      weight: 1.5
+      primary_category: 'social'
+      sub_category: 'contact'
+      description: 'General social contact'
+      requires_validation: false
+      avg_duration: 3.1  # seconds
+      variants:
+        - name: 'Approach contact'
+          weight_modifier: 1.0  # 2.5 final weight (higher than normal contact due to directed social initiative)
+          context: 'social_initiative'
+          description: 'Direct approach resulting in social contact'
+        - name: 'Side by side Contact'
+          weight_modifier: 0.0  # 1.5 final weight
+          context: 'social_affiliation'
+          description: 'Parallel social contact'
+        - name: 'Side by side Contact, opposite way'
+          weight_modifier: 0.0  # 1.5 final weight
+          context: 'social_affiliation'
+          description: 'Anti-parallel social contact'
+        - name: 'Move in contact'
+          weight_modifier: -0.3  # 1.2 final weight
+          context: 'social_contact'
+          description: 'Locomotion while maintaining social contact'
+        - name: 'Stop in contact'
+          weight_modifier: -0.2  # 1.3 final weight
+          context: 'social_contact'
+          description: 'Stationary while maintaining social contact'
+        - name: 'Break contact'
+          weight_modifier: -0.5  # 1.0 final weight
+          context: 'social_contact'
+          description: 'Termination of social contact'
+    
+    # Escape Behaviors
+    'Social escape':
+      weight: 2.0  # Defensive behavior (Blanchard et al., 2003)
+      primary_category: 'social'
+      sub_category: 'response'
+      description: 'Active avoidance of social interaction'
+      requires_validation: false
+      avg_duration: 1.7  # seconds
+      variants:
+        - name: 'Get away'
+          weight_modifier: -0.2  # 1.8 final weight
+          context: 'social_response'
+          description: 'Mild avoidance behavior'
+    
+    # Group Behaviors
+    'Group':
+      weight: 2.0
+      primary_category: 'social'
+      sub_category: 'group'
+      description: 'Multi-animal interaction'
+      requires_validation: true
+      avg_duration: 1.7  # seconds
+      variants:
+        - name: 'Group2'
+          weight_modifier: 0.0  # 2.0 final weight
+          context: 'dyadic'
+          description: 'Two-animal interaction'
+        - name: 'Group3'
+          weight_modifier: 1.5  # 3.5 final weight
+          context: 'complex_social'
+          description: 'Three-animal interaction'
+        - name: 'Group4'
+          weight_modifier: 2.0  # 4.0 final weight
+          context: 'complex_social'
+          description: 'Four-animal interaction'
+        - name: 'Group 3 make'
+          weight_modifier: 1.0  # 3.0 final weight
+          context: 'group_formation'
+          description: 'Formation of three-animal group'
+        - name: 'Group 3 break'
+          weight_modifier: 1.0  # 3.0 final weight
+          context: 'group_dissolution'
+          description: 'Dissolution of three-animal group'
+        - name: 'Group 4 make'
+          weight_modifier: 1.5  # 3.5 final weight
+          context: 'group_formation'
+          description: 'Formation of four-animal group'
+        - name: 'Group 4 break'
+          weight_modifier: 1.5  # 3.5 final weight
+          context: 'group_dissolution'
+          description: 'Dissolution of four-animal group'
+
+    # Rearing Behaviors
+    'Rearing':
+      weight: 1.5  # Exploratory behavior (Lever et al., 2006)
+      primary_category: 'individual'
+      sub_category: 'exploration'
+      description: 'Environmental investigation behavior'
+      requires_validation: false
+      avg_duration: 29.3  # seconds
+      references: ['Lever et al., 2006']
+      variants:
+        - name: 'Rear isolated'
+          weight_modifier: -0.3  # 1.2 final weight
+          context: 'solitary_exploration'
+          description: 'Environmental investigation behavior'
+        - name: 'Rear at periphery'
+          weight_modifier: -0.5  # 1.0 final weight
+          context: 'anxiety'
+          description: 'Environmental investigation behavior'
+        - name: 'Rear in contact'
+          weight_modifier: -0.2  # 1.3 final weight
+          context: 'social_exploration'
+          description: 'Environmental investigation behavior'
+        - name: 'Rear in centerWindow'
+          weight_modifier: -0.1  # 1.4 final weight
+          context: 'exploration'
+          description: 'Environmental investigation behavior'
+    
+    # Stop Behaviors
+    'Stop':
+      weight: 1.0
+      primary_category: 'individual'
+      sub_category: 'basic'
+      description: 'General immobility'
+      requires_validation: false
+      avg_duration: 10.5  # seconds
+      variants:
+        - name: 'Stop isolated'
+          weight_modifier: 0.5  # 1.5 final weight
+          context: 'solitary'
+          description: 'Immobile while alone'
+        - name: 'Move isolated'
+          weight_modifier: 0.2  # 1.2 final weight
+          context: 'solitary'
+          description: 'Locomotion while alone'
+    
+    # Anxiety-related Behaviors
+    'WallJump':
+      weight: 2.0  # Thigmotaxis indicator (Simon et al., 1994)
+      primary_category: 'individual'
+      sub_category: 'anxiety'
+      description: 'Vertical jump at wall'
+      requires_validation: false
+      avg_duration: 0.8  # seconds
+      references: ['Simon et al., 1994']
+    
+    'Huddling':
+      weight: 2.5  # High weight as important welfare indicator (Boissy et al., 2007)
+      primary_category: 'individual'
+      sub_category: 'distress'
+      description: 'Self-directed huddling posture indicating negative emotional state'
+      requires_validation: true
+      avg_duration: 45.0  # seconds, typically prolonged behavior
+      references: ['Boissy et al., 2007', 'Olsson et al., 2003']
+      
+    
+    'SAP':
+      weight: 1.5  # Risk assessment (Blanchard et al., 2001)
+      primary_category: 'individual'
+      sub_category: 'anxiety'
+      description: 'Stretched attend posture'
+      requires_validation: false
+      avg_duration: 2.1  # seconds
+      references: ['Blanchard et al., 2001']
+
+    # Spatial Behaviors
+    'Zone Occupation':
+      weight: 1.5  # Anxiety measure (Prut & Belzung, 2003)
+      primary_category: 'spatial'
+      sub_category: 'location'
+      description: 'Arena zone occupation'
+      requires_validation: false
+      avg_duration: 2.5  # seconds
+      variants:
+        - name: 'Center Zone'
+          weight_modifier: 0.0  # 1.5 final weight
+          context: 'exploration'
+          description: 'Arena center occupation'
+        - name: 'Periphery Zone'
+          weight_modifier: -0.5  # 1.0 final weight
+          context: 'anxiety'
+          description: 'Arena periphery occupation'
+        - name: 'Nest3_'
+          weight_modifier: 0.5  # 2.0 final weight
+          context: 'nesting'
+          description: 'Three animals in nest area'
+          requires_validation: false
+          avg_duration: 4.7  # seconds
+        - name: 'Nest4_'
+          weight_modifier: 1.0  # 2.5 final weight
+          context: 'nesting'
+          description: 'Four animals in nest area'
+          requires_validation: false
+          avg_duration: 32.6  # seconds
+
+    # Sequential Behaviors
+    'Investigation Sequence':
+      weight: 2.5
+      primary_category: 'sequence'
+      sub_category: 'investigation'
+      description: 'Sequential investigation pattern'
+      requires_validation: true
+      avg_duration: 2.8  # seconds
+      variants:
+        - name: 'seq oral oral - oral genital'
+          weight_modifier: 0.0  # 2.5 final weight
+          context: 'investigation_sequence'
+          description: 'Oral-oral followed by oral-genital investigation'
+        - name: 'seq oral geni - oral oral'
+          weight_modifier: 0.0  # 2.5 final weight
+          context: 'investigation_sequence'
+          description: 'Oral-genital followed by oral-oral investigation'
+
+    # Train Behaviors
+    'Train':
+      weight: 2.0
+      primary_category: 'sequence'
+      sub_category: 'following'
+      description: 'Animals moving in sequence'
+      requires_validation: true
+      avg_duration: 0.5  # seconds
+      variants:
+        - name: 'Train2'
+          weight_modifier: 0.0  # 2.0 final weight
+          context: 'following'
+          description: 'Two animals moving in sequence'
+        - name: 'Train3'
+          weight_modifier: 1.0  # 3.0 final weight
+          context: 'following'
+          description: 'Three animals moving in sequence'
+        - name: 'FollowZone'
+          weight_modifier: -0.5  # 1.5 final weight
+          context: 'following'
+          description: 'One animal following another'
+
+# Analysis Parameters
+analysis:
+  # Parameters based on established protocols (Crawley, 2007; File & Seth, 2003)
+  time_windows:
+    short_term: 60    # 1 minute (Moy et al., 2004)
+    medium_term: 300  # 5 minutes (File & Seth, 2003)
+    long_term: 1800   # 30 minutes (Blanchard et al., 2003)
+  
+  # Minimum durations (seconds) for valid events
+  duration_thresholds:
+    social_contact: 1.0
+    group_interaction: 2.0
+    isolation: 5.0
+    zone_occupation: 3.0
+
+  # Social interaction parameters
+  social:
+    min_interaction_duration: 1.0  # seconds
+    max_interaction_gap: 5.0      # seconds between related events
+    group_size_thresholds:
+      dyadic: 2
+      small_group: 3
+      large_group: 4
+
+  # Behavioral sequence analysis
+  sequence_analysis:
+    max_gap: 5.0  # seconds between sequential events
+    min_support: 0.01  # minimum frequency for pattern detection
+    max_pattern_length: 5  # maximum events in a sequence
+
+# Visualization Parameters
+visualization:
+  node_size_scale: 20
+  edge_width_scale: 2
+  colormap: "viridis"
+  animation_duration: 500  # ms
+  max_fps: 30
+
+# Social Interaction Thresholds
+social:
+  minimum_contact_duration: 3    # Seconds to count as interaction
+  group_size_thresholds:
+    dyadic: 2
+    small_group: 3
+    large_group: 4
+  reciprocity_window: 300        # 5-min response window
+
+# Welfare Scoring Weights
+welfare:
+  anxiety_behaviors: ['WallJump', 'Stop isolated']
+  social_behaviors: ['Huddling', 'Side by side Contact']
+  exploration_behaviors: ['Center Zone', 'Rearing']
+  aggression_behaviors: ['Social escape', 'Get away']
+  anxiety_index: 0.4             # Weight for anxiety behaviors
+  social_engagement: 0.3         # Weight for prosocial behaviors  
+  exploration: 0.2               # Weight for center/rearing
+  aggression_received: 0.1       # Weight for escape/getaway
+  thresholds:
+    good_welfare: 0.7            # ≥70th percentile
+    poor_welfare: 0.3            # ≤30th percentile
+
+# Dominance Parameters
+dominance:
+  interaction_decay: 0.85        # PageRank damping factor
+  linearity_threshold: 0.65      # Minimum Landau's h for hierarchy
+  recent_window: 3600            # 1-hour window for recent dominance
+
+# Model path (if you have a pre-trained model)
+model_path: "behavior_model.onnx"
+
+# Performance settings
+performance:
+  chunk_size: 50000
+  ram_limit: 8589934592  # 8GB in bytes
+  temporal_resolution: 2  # seconds
+
+# Device preferences
+device_preferences:
+  - "NPU"
+  - "GPU"
+  - "CPU"
+
+# References for behavioral measures:
+# - Alberts, J. R. (2007). Huddling by rat pups: Group behavioral mechanisms of temperature regulation and energy conservation. Journal of Comparative Psychology.
+# - Blanchard, R. J., et al. (2001). Mouse defensive behaviors: pharmacological and behavioral assays for anxiety and panic. Neuroscience & Biobehavioral Reviews.
+# - Blanchard, D. C., et al. (2003). The Mouse Defense Test Battery: pharmacological and behavioral assays for anxiety and panic. European Journal of Pharmacology.
+# - Crawley, J. N. (2007). What's Wrong With My Mouse?: Behavioral Phenotyping of Transgenic and Knockout Mice.
+# - Defensor, E. B., et al. (2011). A novel social proximity test suggests patterns of social avoidance and gaze aversion-like behavior in BTBR T+ tf/J mice. Behavioural Brain Research.
+# - File, S. E., & Seth, P. (2003). A review of 25 years of the social interaction test. European Journal of Pharmacology.
+# - Grant, E. C., & Mackintosh, J. H. (1963). A comparison of the social postures of some common laboratory rodents. Behaviour.
+# - Lever, C., et al. (2006). Rearing on hind legs, environmental novelty, and the hippocampal formation. Reviews in the Neurosciences.
+# - Moy, S. S., et al. (2004). Sociability and preference for social novelty in five inbred strains. Genes, Brain and Behavior.
+# - Prut, L., & Belzung, C. (2003). The open field as a paradigm to measure the effects of drugs on anxiety-like behaviors: a review. European Journal of Pharmacology.
+# - Saito, Y., et al. (2014). The Validation of a Novel Method for Assessing Social Dominance in Mice. Frontiers in Behavioral Neuroscience.
+# - Shemesh, Y., et al. (2013). High-order social interactions in groups of mice. eLife.
+# - Simon, P., et al. (1994). Thigmotaxis as an index of anxiety in mice. Behavioural Brain Research.
+
+# Sequence Parameters
+sequence:
+  changepoint_threshold: 0.15  # Even lower threshold for more transitions
+  min_sequence_duration: 10    # Allow even shorter sequences
+  max_sequence_duration: 180   # 3 minutes max for better granularity
+  bout_parameters:
+    social_interaction:
+      min_duration: 1    # Brief social contacts
+      max_duration: 20   # Extended social investigation
+      sensitivity: 1.5   # Even more sensitive to social changes
+    activity_bout:
+      min_duration: 10   # Allow shorter activities
+      max_duration: 120  # 2 minutes max for better segmentation
+      consistency_threshold: 0.5  # More flexible
+      sensitivity: 0.6   # More sensitive to changes
+
+# Detection Parameters
+detection:
+  bayesian:
+    mu_duration: 2.8      # Keep baseline
+    lookback_window: 8    # Even shorter for quick detection
+  windowing:
+    max_gap: 120         # 2 minutes max gap
+    base_window: 15      # Smaller base window
+    min_window: 3        # Very small windows allowed
+    max_window: 30       # Shorter max window
+    target_density: 40   # Higher density target
+    density_factors:
+      social: 0.6        # Even more sensitive to social
+      consistent: 1.4    # Stronger consistency preference
+      light_phase: 0.7   # More sensitive in active phase
+      dark_phase: 1.3    # More tolerant in rest phase

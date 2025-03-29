@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="LMT Dimensionality Reduction Analysis Toolkit - A Python-based pipeline for behavioral identity analysis">
+    <meta name="author" content="Andrea Stivala">
+    <title>LMT Dimensionality Reduction Analysis Toolkit</title>
+    <style>
+        :root {
+            --primary-color: #e4e4e7;
+            --secondary-color: #a1a1aa;
+            --background-color: #18181b;
+            --surface-color: #27272a;
+            --code-background: #2d2d30;
+            --border-color: #3f3f46;
+            --link-color: #60a5fa;
+            --heading-color: #f4f4f5;
+            --spacing-unit: 1rem;
+            --accent-color: #60a5fa;
+            --hover-color: #93c5fd;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            background-color: var(--background-color);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--primary-color);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: var(--spacing-unit) calc(var(--spacing-unit) * 2);
+            background-color: var(--background-color);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: var(--spacing-unit);
+            }
+        }
+
+        h1, h2, h3, h4 {
+            margin: calc(var(--spacing-unit) * 1.5) 0 var(--spacing-unit);
+            color: var(--heading-color);
+            font-weight: 600;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: var(--spacing-unit);
+        }
+
+        h2 {
+            font-size: 1.75em;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: calc(var(--spacing-unit) * 0.5);
+        }
+
+        h3 {
+            font-size: 1.25em;
+        }
+
+        p, ul, ol {
+            margin-bottom: var(--spacing-unit);
+            color: var(--primary-color);
+        }
+
+        ul, ol {
+            padding-left: calc(var(--spacing-unit) * 2);
+        }
+
+        li {
+            margin-bottom: calc(var(--spacing-unit) * 0.5);
+        }
+
+        pre {
+            background-color: var(--code-background);
+            padding: calc(var(--spacing-unit) * 1.25);
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: var(--spacing-unit) 0;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.9em;
+            background-color: var(--code-background);
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            color: #93c5fd;
+        }
+
+        pre code {
+            padding: 0;
+            background-color: transparent;
+            color: var(--primary-color);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: var(--spacing-unit) 0;
+            font-size: 0.9em;
+            background-color: var(--surface-color);
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: calc(var(--spacing-unit) * 0.75);
+            text-align: left;
+        }
+
+        th {
+            background-color: var(--code-background);
+            font-weight: 600;
+            color: var(--heading-color);
+        }
+
+        tr:nth-child(even) {
+            background-color: var(--code-background);
+        }
+
+        tr:hover {
+            background-color: var(--surface-color);
+        }
+
+        a {
+            color: var(--link-color);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        a:hover {
+            color: var(--hover-color);
+            text-decoration: underline;
+        }
+
+        .container {
+            max-width: 100%;
+            overflow-x: auto;
+            background-color: var(--surface-color);
+            border-radius: 6px;
+            padding: var(--spacing-unit);
+        }
+
+        .note {
+            background-color: var(--surface-color);
+            border-left: 4px solid var(--accent-color);
+            padding: var(--spacing-unit);
+            margin: var(--spacing-unit) 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        ::selection {
+            background-color: var(--accent-color);
+            color: var(--background-color);
+        }
+
+        @media print {
+            :root {
+                --primary-color: #000;
+                --secondary-color: #333;
+                --background-color: #fff;
+                --surface-color: #fff;
+                --code-background: #f5f5f5;
+                --border-color: #ddd;
+                --heading-color: #000;
+            }
+            
+            body {
+                color: black;
+                background: white;
+            }
+            
+            pre, code {
+                border: 1px solid #ddd;
+            }
+
+            a {
+                color: #000;
+                text-decoration: underline;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>LMT Dimensionality Reduction Analysis Toolkit</h1>
+    <p>A Python-based pipeline for behavioral identity analysis using LDA/PCA.</p>
+
+    <div class="note">
+        <p>📚 <strong>New to this toolkit?</strong> Check out our <a href="../SETUP_GUIDE.md">Setup Guide</a> for detailed installation and getting started instructions!</p>
+    </div>
+
+    <h2>Overview</h2>
+    <p>This toolkit processes rodent behavioral data from LMT experiments to perform identity domain analysis via dimensionality reduction techniques (LDA/PCA). Currently supports baseline analysis with three temporal resolutions:</p>
+    <ul>
+        <li>12-hour intervals (night cycle)</li>
+        <li>4-hour chunks (circadian phases)</li>
+        <li>Hourly resolution</li>
+    </ul>
+
+    <h2>Prerequisites</h2>
+    <ul>
+        <li>Python 3.8+ with packages: pandas, numpy, scipy, scikit-learn, sqlite3, tkinter</li>
+        <li>SQLite databases containing raw event/animal data</li>
+        <li>DB Browser for SQLite (recommended for manual checks)</li>
+    </ul>
+
+    <h2>Installation</h2>
+    <p>The installation requires a specific order due to dependencies:</p>
+    <pre><code># 1. Install numpy first
+pip install numpy==1.23.5
+
+# 2. Install scipy before scikit-learn
+pip install scipy>=1.9.0
+
+# 3. Install remaining packages
+pip install -r requirements.txt</code></pre>
+
+    <h2>Project Structure</h2>
+    <pre><code>.
+├── data/                          # Data and visualization outputs
+│   └── behavior_stats_intervals_analyzed/  # Interactive HTML visualizations
+├── src/
+│   ├── analysis/                  # Analysis scripts
+│   ├── behavior/                  # Behavior processing modules
+│   ├── preprocessing/             # Data preprocessing tools
+│   ├── visualization/             # Visualization utilities
+│   └── utils/                     # Utility functions
+├── docs/                          # Documentation
+└── tools/                         # Utility scripts</code></pre>
+
+    <h2>Pipeline Workflow</h2>
+
+    <h3>1. Event Filtering</h3>
+    <p>Script: <code>src/preprocessing/event_filtered.py</code></p>
+    <p>Purpose: Create cleaned event data with timestamps.</p>
+    <pre><code>from src.preprocessing.event_filtered import create_event_filtered_table, process_events
+
+# The script will show a GUI for:
+# 1. Database selection
+# 2. Experiment start time selection
+
+# It automatically:
+# - Creates EVENT_FILTERED table
+# - Excludes non-behavioral events (e.g., RFID errors, brief detections)
+# - Merges adjacent events (<1 sec apart)
+# - Adds duration and timestamp information</code></pre>
+
+    <h3>2. Behavioral Feature Extraction</h3>
+    <p>Choose processor based on temporal resolution:</p>
+    <table>
+        <tr>
+            <th>Script</th>
+            <th>Resolution</th>
+            <th>Use Case</th>
+            <th>Output Tables</th>
+        </tr>
+        <tr>
+            <td>behavior_processor.py</td>
+            <td>Per-experiment</td>
+            <td>Daily totals</td>
+            <td>BEHAVIOR_STATS, MULTI_MOUSE_EVENTS</td>
+        </tr>
+        <tr>
+            <td>behavior_processor_interval.py</td>
+            <td>12h intervals (7PM-7AM)</td>
+            <td>Night-cycle analysis</td>
+            <td>behavior_stats_intervals</td>
+        </tr>
+        <tr>
+            <td>behavior_processor_hourly.py</td>
+            <td>Hourly chunks</td>
+            <td>Flexible temporal analysis</td>
+            <td>behavior_hourly, group_events_hourly</td>
+        </tr>
+    </table>
+
+    <p>Example usage:</p>
+    <pre><code># Daily Totals
+from src.behavior.behavior_processor import BehaviorProcessor
+processor = BehaviorProcessor(db_path)
+processor.process_events()
+
+# 12-hour Intervals (Night Cycle)
+from src.behavior.behavior_processor_interval import IntervalBehaviorProcessor
+processor = IntervalBehaviorProcessor(db_path)
+processor.process_intervals()
+
+# Hourly Analysis
+from src.behavior.behavior_processor_hourly import HourlyBehaviorProcessor
+processor = HourlyBehaviorProcessor(db_path)
+processor.process_hourly()</code></pre>
+
+    <p>Key Features:</p>
+    <ul>
+        <li>Separates dyadic interactions into active/passive counts</li>
+        <li>Tracks group behaviors (≥3 mice)</li>
+        <li>Imputes missing data using mouse-specific medians</li>
+    </ul>
+
+    <h3>3. Database Unification</h3>
+    <p>Script: <code>src/database/lda_database_creator.py</code></p>
+    <p>Purpose: Merge multiple experiments into one analysis-ready dataset.</p>
+    <p>Steps:</p>
+    <ul>
+        <li>Select source databases (GUI)</li>
+        <li>Choose output path</li>
+    </ul>
+    <p>Output:</p>
+    <ul>
+        <li>Merged SQLite database</li>
+        <li>Corresponding CSV file</li>
+    </ul>
+    <p>Tip: Create separate merged DBs for different temporal resolutions</p>
+
+    <h3>4. Dimensionality Reduction Analysis</h3>
+    <table>
+        <tr>
+            <th>Script</th>
+            <th>Method</th>
+            <th>Temporal Resolution</th>
+            <th>Key Features</th>
+        </tr>
+        <tr>
+            <td>analysis_demo.py</td>
+            <td>LDA</td>
+            <td>12h intervals</td>
+            <td>Identity domain stability scoring</td>
+        </tr>
+        <tr>
+            <td>analysis_demo_4h.py</td>
+            <td>LDA</td>
+            <td>4h chunks</td>
+            <td>Circadian phase analysis</td>
+        </tr>
+        <tr>
+            <td>analysis_demo_pca.py</td>
+            <td>PCA</td>
+            <td>4h chunks</td>
+            <td>3D feature space projection</td>
+        </tr>
+    </table>
+
+    <p>Example usage:</p>
+    <pre><code># LDA Analysis
+from src.analysis.analysis_demo import run_analysis
+
+# PCA Analysis
+from src.analysis.analysis_demo_pca import run_pca_analysis</code></pre>
+
+    <p>The analysis includes:</p>
+    <ul>
+        <li>Feature preprocessing</li>
+        <li>Variance thresholding</li>
+        <li>Correlation filtering (>0.95 correlated features removed)</li>
+        <li>Standardization (Z-score normalization)</li>
+    </ul>
+
+    <h3>5. Visualization</h3>
+    <p>The package includes interactive visualization capabilities:</p>
+    <pre><code>from src.visualization.identity_space_plotter import plot_identity_space
+
+# Creates interactive HTML visualizations
+# Output location: data/behavior_stats_(resolution)_analyzed/</code></pre>
+
+    <p>Visualization outputs can be found in:</p>
+    <ul>
+        <li><code>data/behavior_stats_(resolution)_analyzed/*.html</code></li>
+        <li>Open these files in any web browser to view interactive plots</li>
+    </ul>
+
+    <h2>Key Script Utilities</h2>
+    <ul>
+        <li><code>id_update.py</code>: Safely modify mouse IDs across tables</li>
+        <li><code>database_utils.py</code>: DB backup/verification functions</li>
+        <li><code>db_selector.py</code>: GUI-based database selection</li>
+    </ul>
+
+    <h2>Best Practices</h2>
+    <ul>
+        <li>Backup databases before running processors</li>
+        <li>Validate outputs using DB Browser</li>
+        <li>For 4h analysis: Use merged_for_lda_hourly.csv</li>
+        <li>For 12h analysis: Use merged_for_lda_intervals.csv</li>
+    </ul>
+
+    <h2>Configuration</h2>
+    <p>The package can be configured using environment variables:</p>
+    <ul>
+        <li><code>LMT_ENV</code>: Set environment (development/production)</li>
+        <li><code>LMT_DEBUG</code>: Enable/disable debug mode</li>
+    </ul>
+
+    <h2>Recent Updates</h2>
+
+    <h3>Project Organization</h3>
+    <ul>
+        <li>Added dedicated <code>tools</code> directory for utility scripts:
+            <ul>
+                <li><code>fix_encoding.py</code>: Tool for fixing file encodings to UTF-8</li>
+            </ul>
+        </li>
+        <li>Consolidated all configuration files in <code>docs</code> folder</li>
+    </ul>
+
+    <h3>New Dependencies</h3>
+    <p>Added support for:</p>
+    <ul>
+        <li><code>scipy>=1.9.0</code>: Linear algebra operations for analysis</li>
+        <li><code>scikit-learn>=1.0.0</code>: PCA and preprocessing functionality</li>
+        <li><code>plotly>=5.13.0</code>: Advanced visualization capabilities</li>
+        <li><code>tkcalendar>=1.6.1</code>: Enhanced date selection UI</li>
+        <li><code>seaborn>=0.12.2</code>: Statistical data visualization</li>
+    </ul>
+
+    <h3>Encoding Management</h3>
+    <ul>
+        <li>Added UTF-8 encoding support across all source files</li>
+        <li>Implemented automatic encoding detection and conversion</li>
+        <li>Fixed potential encoding-related issues in data processing</li>
+    </ul>
+
+    <h2>License</h2>
+    <p>This project is licensed under the MIT License - see the LICENSE file for details.</p>
+
+    <h2>Contact</h2>
+    <p>For support or inquiries, please contact Andrea Stivala at andreastivala.as@gmail.com.</p>
+</body>
+</html>
