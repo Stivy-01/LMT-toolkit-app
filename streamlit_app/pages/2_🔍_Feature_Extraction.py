@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import sys
 import os
+import time
+from datetime import timedelta
+
 # Path and import setup
 streamlit_app_path = Path(__file__).parent.parent
 project_path = streamlit_app_path.parent
@@ -17,6 +20,8 @@ from utils.analysis_utils import extract_features_from_database
 from src.behavior.behavior_processor import BehaviorProcessor as FullExperimentProcessor
 from src.behavior.behavior_processor_hourly import BehaviorProcessor as HourlyProcessor
 from src.behavior.behavior_processor_interval import BehaviorProcessor as IntervalProcessor
+from utils.db_direct_access import get_available_databases, get_tables, get_table_data, connect_to_database
+from config import DATA_DIR, validate_data_directory
 
 def display_behavior_stats(df):
     st.session_state.current_behavior_stats = df
@@ -190,375 +195,291 @@ if 'extraction_completed' not in st.session_state:
 
 st.title("🔍 Feature Extraction")
 st.markdown("""
-Extract behavioral features from the LMT database for analysis.
-This page allows you to extract and preprocess features based on various filters.
+This page allows you to extract behavioral features from your LMT data.
+The app will access databases directly from your configured data directory.
 """)
 
-# Check if database is connected
-if not st.session_state.db_connection:
-    st.warning("Please connect to a database first in the Database Management page")
+# Check if data directory is valid
+is_valid, message = validate_data_directory()
+if not is_valid:
+    st.error(message)
+    st.error(f"Please check your data directory configuration in config.py: {DATA_DIR}")
     st.stop()
 
-# Display database status
-st.success(f"Connected to database: {os.path.basename(st.session_state.db_path)}")
+st.success(f"Using data directory: {DATA_DIR}")
 
-# Display available behavior stats tables (always visible)
-conn = st.session_state.db_connection
-cursor = conn.cursor()
+# Get available databases
+available_dbs = get_available_databases()
+if not available_dbs:
+    st.warning(f"No database files (.db, .sqlite, .sqlite3) found in {DATA_DIR}")
+    st.info("Please add your database files to this directory")
+    st.stop()
 
-# Define the stat tables to check (both uppercase and lowercase variants)
-stat_tables = [
-    "BEHAVIOR_STATS", 
-    "behavior_stats_hourly", 
-    "behavior_stats_intervals"
-]
-available_tables = []
+# Database selection
+selected_db = st.selectbox("Select Database", available_dbs, format_func=lambda x: x)
 
-# Check each table
-for table in stat_tables:
-    # Check for the table in any case (upper, lower, mixed)
-    cursor.execute(f"""
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND 
-        (name='{table}' OR name='{table.upper()}' OR name='{table.lower()}')
-    """)
-    table_info = cursor.fetchone()
-    if table_info:
-        # Use the actual table name found
-        actual_table_name = table_info[0]
-        cursor.execute(f"SELECT COUNT(*) FROM {actual_table_name}")
-        row_count = cursor.fetchone()[0]
-        if row_count > 0:
-            available_tables.append((actual_table_name, row_count))
-
-# If tables exist with data, give option to view them
-if available_tables:
-    with st.expander("View Existing Behavior Statistics", expanded=False):
-        st.info("Select a table to view existing behavior statistics:")
-        
-        table_options = [f"{table} ({rows} rows)" for table, rows in available_tables]
-        selected_table_option = st.selectbox("Select statistics to view:", table_options)
-        
-        if selected_table_option:
-            # Extract the table name from the selection
-            selected_table = selected_table_option.split(" (")[0]
-            
-            if st.button(f"Load {selected_table}"):
-                # Load the selected table
-                behavior_stats_df = pd.read_sql(f"SELECT * FROM {selected_table}", conn)
-                
-                # Store the table name for later use in downloads
-                st.session_state.current_table_name = selected_table
-                
-                st.session_state.features = behavior_stats_df
-                st.session_state.current_behavior_stats = behavior_stats_df
-                st.session_state.extraction_completed = True
-                
-                st.success(f"Loaded {len(behavior_stats_df)} rows from {selected_table}")
-                st.session_state.active_behavior_tab = 0  # Reset to first tab
-                st.rerun()
-
-# Create columns for the main interface sections
-col1, col2 = st.columns([1, 1])
-
-# --- Feature Extraction Parameters ---
-st.header("Feature Extraction Parameters")
-
-# Select extraction method
-st.subheader("Extraction Method")
-extraction_method = st.radio(
-    "Select feature extraction method:",
-    ["Basic Features", "Full Experiment (All Time)", "Hourly Intervals", "Night Intervals (19:00-07:00)"]
-)
-
-# Create columns layout
-col1, col2 = st.columns(2)
-
-with col1:
-    # Time window filter
-    st.subheader("Time Window Filter")
-    use_time_window = st.checkbox("Filter by time window", value=False)
+# Create a database connection
+try:
+    conn = connect_to_database(selected_db)
+    # Check if this is an EVENT_FILTERED database
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = [table[0] for table in cursor.fetchall()]
     
-    time_window = None
-    if use_time_window:
-        # Get the minimum and maximum datetime from the EVENT_FILTERED table
-        try:
-            min_time_query = "SELECT MIN(event_start_datetime) FROM EVENT_FILTERED"
-            max_time_query = "SELECT MAX(event_start_datetime) FROM EVENT_FILTERED"
-            
-            min_datetime_str = pd.read_sql(min_time_query, st.session_state.db_connection).iloc[0, 0]
-            max_datetime_str = pd.read_sql(max_time_query, st.session_state.db_connection).iloc[0, 0]
-            
-            # Convert to datetime objects
-            if min_datetime_str and max_datetime_str:
-                try:
-                    min_datetime = datetime.datetime.strptime(min_datetime_str, '%Y-%m-%d %H:%M:%S')
-                    max_datetime = datetime.datetime.strptime(max_datetime_str, '%Y-%m-%d %H:%M:%S')
-                except:
-                    # Fallback if parsing fails
-                    min_datetime = datetime.datetime.now() - datetime.timedelta(days=1)
-                    max_datetime = datetime.datetime.now()
-            else:
-                # Fallback if no data
-                min_datetime = datetime.datetime.now() - datetime.timedelta(days=1)
-                max_datetime = datetime.datetime.now()
-                
-            # Split into date and time parts for the input widgets
-            min_date = min_datetime.date()
-            min_time = min_datetime.time()
-            max_date = max_datetime.date()
-            max_time = max_datetime.time()
-            
-            # Date inputs
-            st.write("Start Time:")
-            start_date = st.date_input("Date", min_date, min_value=min_date, max_value=max_date, key="start_date")
-            start_time = st.time_input("Time", min_time, key="start_time")
-            
-            st.write("End Time:")
-            end_date = st.date_input("Date", max_date, min_value=min_date, max_value=max_date, key="end_date")
-            end_time = st.time_input("Time", max_time, key="end_time")
-            
-            # Combine date and time
-            start_datetime = datetime.datetime.combine(start_date, start_time)
-            end_datetime = datetime.datetime.combine(end_date, end_time)
-            
-            # Store as strings in the format expected by the database
-            start_datetime_str = start_datetime.strftime('%Y-%m-%d %H:%M:%S')
-            end_datetime_str = end_datetime.strftime('%Y-%m-%d %H:%M:%S')
-            
-            # Time window will now be a tuple of datetime strings
-            time_window = (start_datetime_str, end_datetime_str)
-            
-            st.info(f"Selected time window: {start_datetime_str} to {end_datetime_str}")
-            
-        except Exception as e:
-            st.error(f"Error retrieving time range: {str(e)}")
-            st.warning("Using default time window")
-            # Default to None, which will not apply time filtering
-            time_window = None
-
-with col2:
-    # Animal filter
-    st.subheader("Animal Filter")
-    use_animal_filter = st.checkbox("Filter by animal", value=False)
-    
-    animal_ids = None
-    if use_animal_filter:
-        # Get all animal IDs from the database
-        try:
-            # Try first with 'animal' column
-            animals_query = "SELECT animal FROM ANIMAL"
-            animals_df = pd.read_sql(animals_query, st.session_state.db_connection)
-            all_animals = animals_df['animal'].tolist()
-        except:
-            try:
-                # If that fails, try with 'ID' column
-                animals_query = "SELECT ID FROM ANIMAL"
-                animals_df = pd.read_sql(animals_query, st.session_state.db_connection)
-                all_animals = animals_df['ID'].tolist()
-            except Exception as e:
-                st.error(f"Error retrieving animals from database: {str(e)}")
-                all_animals = []
+    # Check if EVENT_FILTERED table exists
+    if 'EVENT_FILTERED' not in tables:
+        st.warning(f"The database {selected_db} does not contain an EVENT_FILTERED table.")
+        st.info("You need a database with processed event data. Please use the Database Management page first to process your events.")
+        st.stop()
         
-        # Multi-select for animals
-        if all_animals:
-            selected_animals = st.multiselect(
-                "Select animals",
-                options=all_animals,
-                default=all_animals[:min(5, len(all_animals))],
-                key="animal_select"
-            )
-            
-            if selected_animals:
-                animal_ids = selected_animals
-                st.info(f"Selected {len(selected_animals)} animals")
-            else:
-                st.warning("No animals selected. All animals will be included.")
-                animal_ids = None  # Ensure filter is disabled
+    # Get animal IDs
+    cursor.execute("SELECT DISTINCT Animal FROM EVENT_FILTERED ORDER BY Animal;")
+    animal_ids = [str(row[0]) for row in cursor.fetchall()]
+    
+    if not animal_ids:
+        st.error("No animals found in the EVENT_FILTERED table.")
+        st.stop()
+        
+    # Parameter selection
+    st.header("Feature Extraction Parameters")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Select animals
+        selected_animals = st.multiselect(
+            "Select animals to include",
+            animal_ids,
+            default=animal_ids
+        )
+        
+        # Time interval selection
+        interval_options = ["1 hour", "2 hours", "4 hours", "6 hours", "12 hours", "24 hours", "Custom"]
+        interval_selection = st.selectbox("Time interval for feature aggregation", interval_options)
+        
+        if interval_selection == "Custom":
+            custom_hours = st.number_input("Custom interval hours", min_value=0.5, max_value=48.0, value=2.0, step=0.5)
+            interval_hours = custom_hours
         else:
-            st.warning("No animals found in database")
-
-# --- Extract Features Button ---
-st.header("Extract Features")
-
-# Use a placeholder for displaying results to avoid rerunning extraction
-results_placeholder = st.empty()
-
-extract_button = st.button("Extract Features", type="primary")
-
-if extract_button or st.session_state.get('extraction_completed', False):
-    if extract_button:
-        # Clear previous results when explicitly extracting again
-        st.session_state.current_features = None
-        st.session_state.current_behavior_stats = None
-
-    with st.spinner("Extracting features from database..."):
-        try:
-            if extraction_method == "Basic Features":
-                # Use the original feature extraction method
-                features_df = extract_features_from_database(
-                    st.session_state.db_connection,
-                    time_window=time_window,
-                    animal_ids=animal_ids
+            interval_hours = float(interval_selection.split()[0])
+    
+    with col2:
+        # Select behaviors to include
+        cursor.execute("SELECT DISTINCT Name FROM EVENT_FILTERED ORDER BY Name;")
+        all_behaviors = [row[0] for row in cursor.fetchall()]
+        
+        selected_behaviors = st.multiselect(
+            "Select behaviors to include",
+            all_behaviors,
+            default=all_behaviors
+        )
+        
+        # Advanced options
+        min_duration = st.number_input(
+            "Minimum event duration (seconds)",
+            min_value=0.0,
+            max_value=10.0,
+            value=0.2,
+            step=0.1,
+            help="Events shorter than this will be excluded from feature calculation"
+        )
+    
+    # Run feature extraction
+    if st.button("Extract Features", type="primary"):
+        if not selected_animals:
+            st.error("Please select at least one animal")
+            st.stop()
+            
+        if not selected_behaviors:
+            st.error("Please select at least one behavior")
+            st.stop()
+            
+        # Start the extraction process
+        with st.spinner(f"Extracting features for {len(selected_animals)} animals with {interval_hours} hour intervals..."):
+            start_time = time.time()
+            
+            try:
+                # Query to get the time range
+                cursor.execute("""
+                    SELECT MIN(StartTime), MAX(EndTime) 
+                    FROM EVENT_FILTERED 
+                    WHERE Animal IN ({})
+                """.format(','.join(['?' for _ in selected_animals])), selected_animals)
+                
+                time_range = cursor.fetchone()
+                start_datetime = datetime.strptime(time_range[0], '%Y-%m-%d %H:%M:%S')
+                end_datetime = datetime.strptime(time_range[1], '%Y-%m-%d %H:%M:%S')
+                
+                # Create time intervals
+                interval_td = timedelta(hours=interval_hours)
+                intervals = []
+                current = start_datetime
+                
+                while current < end_datetime:
+                    next_interval = current + interval_td
+                    intervals.append((current, next_interval))
+                    current = next_interval
+                
+                # Initialize results dataframe
+                results = []
+                
+                # Process each animal and interval
+                for animal_id in selected_animals:
+                    for i, (interval_start, interval_end) in enumerate(intervals):
+                        # Convert datetimes to strings for SQLite query
+                        start_str = interval_start.strftime('%Y-%m-%d %H:%M:%S')
+                        end_str = interval_end.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # Get events for this animal in this interval
+                        events_query = """
+                            SELECT Name, Duration 
+                            FROM EVENT_FILTERED 
+                            WHERE Animal = ? 
+                            AND Name IN ({})
+                            AND Duration >= ?
+                            AND StartTime >= ? 
+                            AND StartTime < ?
+                        """.format(','.join(['?' for _ in selected_behaviors]))
+                        
+                        cursor.execute(
+                            events_query, 
+                            [animal_id] + selected_behaviors + [min_duration, start_str, end_str]
+                        )
+                        
+                        events = cursor.fetchall()
+                        
+                        # Calculate features
+                        result_row = {
+                            'mouse_id': animal_id,
+                            'interval_start': interval_start.strftime('%Y-%m-%d %H:%M:%S'),
+                            'interval_end': interval_end.strftime('%Y-%m-%d %H:%M:%S'),
+                            'interval_number': i + 1
+                        }
+                        
+                        # Get animal metadata if available
+                        try:
+                            cursor.execute("""
+                                SELECT SEX, GENOTYPE, STRAIN, SETUP 
+                                FROM ANIMAL 
+                                WHERE ANIMAL = ? OR ID = ?
+                            """, [animal_id, animal_id])
+                            
+                            metadata = cursor.fetchone()
+                            if metadata:
+                                result_row['sex'] = metadata[0]
+                                result_row['genotype'] = metadata[1]
+                                result_row['strain'] = metadata[2]
+                                result_row['setup'] = metadata[3]
+                        except:
+                            # Metadata may not be available - that's ok
+                            pass
+                        
+                        # Calculate behavior counts and durations
+                        behavior_counts = {}
+                        behavior_durations = {}
+                        
+                        for event in events:
+                            behavior = event[0]
+                            duration = event[1]
+                            
+                            # Update count
+                            key = f'count_{behavior}'
+                            behavior_counts[key] = behavior_counts.get(key, 0) + 1
+                            
+                            # Add to total duration
+                            duration_key = f'total_duration_{behavior}'
+                            behavior_durations[duration_key] = behavior_durations.get(duration_key, 0) + duration
+                        
+                        # Add counts and durations to result row
+                        for behavior in selected_behaviors:
+                            count_key = f'count_{behavior}'
+                            result_row[count_key] = behavior_counts.get(count_key, 0)
+                            
+                            duration_key = f'total_duration_{behavior}'
+                            result_row[duration_key] = behavior_durations.get(duration_key, 0)
+                            
+                            # Calculate average duration if count > 0
+                            avg_key = f'avg_duration_{behavior}'
+                            if result_row[count_key] > 0:
+                                result_row[avg_key] = result_row[duration_key] / result_row[count_key]
+                            else:
+                                result_row[avg_key] = 0
+                        
+                        results.append(result_row)
+                
+                # Create features dataframe
+                features_df = pd.DataFrame(results)
+                
+                # Store in session state
+                st.session_state.features = features_df
+                
+                # Display success message
+                elapsed_time = time.time() - start_time
+                st.success(f"Feature extraction completed in {elapsed_time:.2f} seconds!")
+                st.write(f"Extracted {len(features_df)} feature rows across {len(selected_animals)} animals and {len(intervals)} time intervals")
+                
+                # Display the features dataframe
+                st.subheader("Extracted Features")
+                st.dataframe(features_df)
+                
+                # Download option
+                csv = features_df.to_csv(index=False)
+                st.download_button(
+                    label="Download Features as CSV",
+                    data=csv,
+                    file_name=f"extracted_features_{interval_hours}h.csv",
+                    mime="text/csv"
                 )
                 
-                # Store features in session state
-                st.session_state.features = features_df
-                st.session_state.current_features = features_df
-                st.session_state.extraction_completed = True
-
-                # Display results
-                st.success(f"Successfully extracted basic features for {len(features_df)} animals")
-                display_feature_results(features_df)
-
-            else:
-                # Initialize processor based on selection
-                if extraction_method == "Full Experiment (All Time)":
-                    processor = FullExperimentProcessor(st.session_state.db_path)
-                    behavior_table = "BEHAVIOR_STATS"
-                    multi_mouse_table = "MULTI_MOUSE_EVENTS"
-                elif extraction_method == "Hourly Intervals":
-                    processor = HourlyProcessor(st.session_state.db_path)
-                    behavior_table = "behavior_stats_hourly"
-                    multi_mouse_table = "group_events_stats_hourly"
-                elif extraction_method == "Night Intervals (19:00-07:00)":
-                    processor = IntervalProcessor(st.session_state.db_path)
-                    behavior_table = "behavior_stats_intervals"
-                    multi_mouse_table = "multi_mouse_events_intervals"
-
-                # Check table existence
-                conn = st.session_state.db_connection
-                cursor = conn.cursor()
-                cursor.execute(f"""
-                    SELECT name 
-                    FROM sqlite_master 
-                    WHERE type='table' AND 
-                    (name='{behavior_table}' OR 
-                     name='{behavior_table.upper()}' OR 
-                     name='{behavior_table.lower()}')
-                """)
-                table_exists = cursor.fetchone() is not None
-
-                # Handle table creation/replacement
-                if table_exists:
-                    replace_data = st.checkbox(
-                        f"The {behavior_table} table exists. Check to replace, uncheck to append.",
-                        value=True
-                    )
-                    processor.should_drop_tables = replace_data
-                    st.info(f"Will {'REPLACE' if replace_data else 'APPEND TO'} {behavior_table}")
-                else:
-                    processor.should_drop_tables = True
-                    st.info(f"Creating new table: {behavior_table}")
-
-                # Apply time window filter
-                if use_time_window and time_window:
-                    start_time_str, end_time_str = time_window
-                    create_temp_table_sql = f"""
-                        DROP TABLE IF EXISTS EVENT_FILTERED_WINDOW;
-                        CREATE TEMPORARY TABLE EVENT_FILTERED_WINDOW AS
-                        SELECT * FROM EVENT_FILTERED
-                        WHERE event_start_datetime BETWEEN '{start_time_str}' AND '{end_time_str}'
-                    """
-                    try:
-                        cursor.executescript(create_temp_table_sql)
-                        conn.commit()
-                        event_count = pd.read_sql("SELECT COUNT(*) FROM EVENT_FILTERED_WINDOW", conn).iloc[0, 0]
-                        st.info(f"Filtered to {event_count} events in time window")
-                    except Exception as e:
-                        st.warning(f"Time filter failed: {str(e)}. Using all events.")
-
-                # Connection wrapper for table name handling
-                original_process_events = processor.process_events
-
-                class ConnectionWrapper:
-                    def __init__(self, original_conn, behavior_table, multi_mouse_table, should_drop):
-                        self.conn = original_conn
-                        self.behavior_table = behavior_table
-                        self.multi_mouse_table = multi_mouse_table
-                        self.should_drop_tables = should_drop
-
-                    def execute(self, sql, *args, **kwargs):
-                        # Modify CREATE/DROP statements
-                        if sql.strip().upper().startswith(('CREATE TABLE', 'DROP TABLE')):
-                            sql_lower = sql.lower()
-                            if self.behavior_table.lower() in sql_lower or self.multi_mouse_table.lower() in sql_lower:
-                                if 'DROP TABLE' in sql.upper() and not self.should_drop_tables:
-                                    return None
-                                if 'CREATE TABLE' in sql.upper() and 'IF NOT EXISTS' not in sql:
-                                    sql = sql.replace('CREATE TABLE', 'CREATE TABLE IF NOT EXISTS', 1)
-                        return self.conn.execute(sql, *args, **kwargs)
-
-                    def __getattr__(self, attr):
-                        return getattr(self.conn, attr)
-                        
-                    def __enter__(self):
-                        # Delegate the enter call to the underlying connection
-                        self.conn.__enter__()
-                        return self
-                        
-                    def __exit__(self, exc_type, exc_val, exc_tb):
-                        # Delegate the exit call to the underlying connection
-                        return self.conn.__exit__(exc_type, exc_val, exc_tb)
-
-                # Monkey patch process_events
-                def custom_process_events():
-                    original_conn = processor.conn
-                    processor.conn = ConnectionWrapper(
-                        original_conn,
-                        behavior_table,
-                        multi_mouse_table,
-                        processor.should_drop_tables
-                    )
-                    try:
-                        return original_process_events()
-                    finally:
-                        processor.conn = original_conn
-
-                processor.process_events = custom_process_events
-
-                # Execute processing
-                processor.process_events()
-
-                # Retrieve and store results
-                behavior_df = pd.read_sql(f"SELECT * FROM {behavior_table}", conn)
-                st.session_state.features = behavior_df
-                st.session_state.current_behavior_stats = behavior_df
-                st.session_state.extraction_completed = True
-
-                # Cleanup and display
-                if use_time_window and time_window:
-                    cursor.execute("DROP TABLE IF EXISTS EVENT_FILTERED_WINDOW")
-                    conn.commit()
-                st.success(f"Processed {len(behavior_df)} records with {extraction_method}")
-                display_behavior_stats(behavior_df)
-
-        except Exception as e:
-            st.error(f"Extraction failed: {str(e)}")
-            st.exception(e)
-            st.session_state.extraction_completed = False
-            raise
-
-elif 'features' in st.session_state and st.session_state.features is not None:
-    # Display previous results
-    st.header("Previously Extracted Features")
-    st.info("Using cached results. Click Extract to refresh.")
+                # Show feature statistics
+                st.subheader("Feature Statistics")
+                
+                # Basic statistics on counts and durations
+                numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+                count_cols = [col for col in numeric_cols if col.startswith('count_')]
+                duration_cols = [col for col in numeric_cols if col.startswith('avg_duration_')]
+                
+                if count_cols:
+                    st.write("**Behavior Counts (per interval)**")
+                    count_stats = features_df[count_cols].describe().T
+                    st.dataframe(count_stats)
+                
+                if duration_cols:
+                    st.write("**Average Behavior Durations (seconds)**")
+                    duration_stats = features_df[duration_cols].describe().T
+                    st.dataframe(duration_stats)
+                
+            except Exception as e:
+                st.error(f"Error during feature extraction: {str(e)}")
+                import traceback
+                st.error(traceback.format_exc())
     
-    with results_placeholder.container():
-        if isinstance(st.session_state.features, pd.DataFrame):
-            if 'BEHAVIOR' in st.session_state.features.columns:
-                display_behavior_stats(st.session_state.features)
-            else:
-                display_feature_results(st.session_state.features)
-        else:
-            st.warning("Invalid cached data. Please re-extract.")
+    conn.close()
+    
+except Exception as e:
+    st.error(f"Error connecting to database {selected_db}: {str(e)}")
 
-else:
-    # Show next steps
-    st.markdown("---")
-    st.header("Next Steps")
-    st.markdown("""
-    1. Configure extraction parameters
-    2. Click 'Extract Features'
-    3. Analyze/download results
-    """)
+# Alternative upload option
+st.markdown("---")
+st.header("Alternative: Use Existing Feature CSV")
+st.info("You can also upload a previously generated features CSV file.")
+
+uploaded_features = st.file_uploader("Upload Features CSV", type=["csv"])
+
+if uploaded_features is not None:
+    try:
+        features_df = pd.read_csv(uploaded_features)
+        st.success(f"Loaded features CSV with {len(features_df)} rows")
+        
+        # Store in session state
+        st.session_state.features = features_df
+        
+        # Display the features
+        st.dataframe(features_df)
+        
+    except Exception as e:
+        st.error(f"Error loading features CSV: {str(e)}")
+
+# Display footer
+st.markdown("---")
+st.markdown("© 2025 LMT Feature Extraction")

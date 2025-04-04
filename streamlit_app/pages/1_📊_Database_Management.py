@@ -7,6 +7,7 @@ import datetime
 import tkinter as tk
 from tkinter import filedialog
 import io
+import time
 
 # Add the streamlit_app directory to the path to import utils
 streamlit_app_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,6 +28,8 @@ from utils.db_utils import (
 # Import the new utility functions
 from utils.sqlite_table_enhancer import remove_columns, delete_rows
 from utils.id_update import update_mouse_id, get_animal_columns
+from utils.db_direct_access import get_available_databases, get_tables, get_table_data, get_table_schema
+from config import DATA_DIR, validate_data_directory
 
 # Utility functions for CSV processing
 def remove_columns_csv(df, columns_to_keep):
@@ -203,853 +206,121 @@ def get_event_metadata_sql(letter):
 
 st.title("📊 Database Management")
 st.markdown("""
-Connect to your LMT database, explore its structure, and run SQL queries. 
-This page supports both direct file path access and file uploads.
+This page allows you to manage and explore your SQLite databases for the LMT Toolkit.
+The app will access databases directly from your configured data directory.
 """)
 
-# Display database connection status at the top if connected
-if st.session_state.db_path:
-    st.success(f"Connected to database: {st.session_state.db_path}")
-    if st.session_state.valid_db:
-        st.write("✅ Valid LMT database structure detected")
-        st.write(f"Found tables: {', '.join(st.session_state.tables)}")
+# Check if data directory is valid
+is_valid, message = validate_data_directory()
+if not is_valid:
+    st.error(message)
+    st.error(f"Please check your data directory configuration in config.py: {DATA_DIR}")
+    st.stop()
+
+st.success(f"Using data directory: {DATA_DIR}")
+
+# Get available databases
+available_dbs = get_available_databases()
+if not available_dbs:
+    st.warning(f"No database files (.db, .sqlite, .sqlite3) found in {DATA_DIR}")
+    st.info("Please add your database files to this directory")
+else:
+    # Database selection
+    selected_db = st.selectbox("Select Database", available_dbs, format_func=lambda x: x)
+    
+    # Get tables in selected database
+    try:
+        tables = get_tables(selected_db)
         
-        # Display database statistics if available
-        if st.session_state.db_stats:
-            st.subheader("Database Statistics")
-            for table, count in st.session_state.db_stats.items():
-                st.write(f"Table `{table}`: {count:,} rows")
-    else:
-        st.warning("⚠️ Database structure does not match expected LMT format")
-        if 'structure_message' in st.session_state:
-            st.info(st.session_state.structure_message)
-        st.write(f"Found tables: {', '.join(st.session_state.tables)}")
-
-# Create tabs for different database connection methods
-tab1, tab2, tab3, tab4 = st.tabs(["Connect via File Path", "Connect via File Upload", "Run SQL Queries", "Data Processing"])
-
-# Tab 1: Connect via File Path
-with tab1:
-    st.header("Connect via File Path")
-    st.markdown("""
-    Use this method for databases larger than Streamlit's 200MB upload limit. 
-    Enter the full path to your SQLite database file.
-    """)
-    
-    # Input for database path
-    db_path = st.text_input(
-        "Enter the path to your SQLite database file:",
-        help="Example: C:/Users/username/data/lmt_database.sqlite or /home/username/data/lmt_database.sqlite"
-    )
-    
-    # Path format converter - Helpful for Windows users
-    st.expander("Path Format Help").markdown("""
-    ### Path Format Converter
-    
-    If you're having trouble with file paths, especially on Windows:
-    
-    - Windows paths use backslashes: `C:\\Users\\username\\data\\lmt_database.sqlite`
-    - Unix-style paths use forward slashes: `C:/Users/username/data/lmt_database.sqlite`
-    
-    The app will attempt to normalize your path, but it's best to use forward slashes (/) even on Windows.
-    
-    ### Common Issues
-    
-    - **Spaces in path**: Enclose the entire path in quotes if it contains spaces
-    - **Network drives**: Use the full UNC path (e.g., `\\\\server\\share\\file.sqlite`)
-    - **Permission issues**: Make sure you have read access to the file
-    """)
-    
-    # Connect button for file path method
-    if st.button("Connect to Database", key="connect_path_button"):
-        if db_path:
-            # Normalize the path
-            normalized_path = normalize_path(db_path)
-            st.session_state.db_path = normalized_path
-            
-            # Validate the database path
-            is_valid_path, path_message = validate_db_path(normalized_path)
-            
-            if is_valid_path:
-                try:
-                    # Attempt to connect to the database
-                    conn = get_db_connection(normalized_path)
-                    st.session_state.db_connection = conn
-                    
-                    # Check if it's a valid LMT database
-                    is_valid_lmt, tables, structure_message = check_lmt_database_structure(conn)
-                    st.session_state.valid_db = is_valid_lmt
-                    st.session_state.tables = tables
-                    st.session_state.structure_message = structure_message
-                    
-                    # Show success message with database information
-                    st.success(f"Successfully connected to database: {normalized_path}")
-                    
-                    if is_valid_lmt:
-                        st.write("✅ Valid LMT database structure detected")
-                        st.write(f"Found tables: {', '.join(tables)}")
-                    else:
-                        st.warning("⚠️ Database structure does not match expected LMT format")
-                        st.info(structure_message)
-                        st.write(f"Found tables: {', '.join(tables)}")
-                        
-                    # Display database statistics and store in session state
-                    st.subheader("Database Statistics")
-                    db_stats = {}
-                    for table in tables:
-                        row_count = pd.read_sql(f"SELECT COUNT(*) as count FROM {table}", conn).iloc[0, 0]
-                        st.write(f"Table `{table}`: {row_count:,} rows")
-                        db_stats[table] = row_count
-                    
-                    # Store statistics in session state for persistence
-                    st.session_state.db_stats = db_stats
-                    
-                except Exception as e:
-                    st.error(f"Failed to connect to the database: {str(e)}")
-                    st.session_state.db_connection = None
-                    st.session_state.valid_db = False
-            else:
-                st.error(path_message)
+        if not tables:
+            st.warning(f"No tables found in database {selected_db}")
         else:
-            st.error("Please enter a database path")
-
-# Tab 2: Connect via File Upload
-with tab2:
-    st.header("Connect via File Upload")
-    st.markdown("""
-    Use this method for smaller databases (under 200MB).
-    Upload your SQLite database file directly.
-    """)
-    
-    uploaded_file = st.file_uploader("Upload SQLite database", type=['sqlite', 'db'])
-    
-    if uploaded_file is not None:
-        # Create a temporary file to store the uploaded database
-        temp_db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp_db.sqlite")
-        
-        with open(temp_db_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        st.session_state.db_path = temp_db_path
-        
-        try:
-            # Attempt to connect to the database
-            conn = get_db_connection(temp_db_path)
-            st.session_state.db_connection = conn
+            # Create tabs for different database views
+            tab1, tab2 = st.tabs(["Table Explorer", "Schema Viewer"])
             
-            # Check if it's a valid LMT database
-            is_valid_lmt, tables, structure_message = check_lmt_database_structure(conn)
-            st.session_state.valid_db = is_valid_lmt
-            st.session_state.tables = tables
-            st.session_state.structure_message = structure_message
-            
-            # Show success message with database information
-            st.success(f"Successfully connected to uploaded database")
-            
-            if is_valid_lmt:
-                st.write("✅ Valid LMT database structure detected")
-                st.write(f"Found tables: {', '.join(tables)}")
-            else:
-                st.warning("⚠️ Database structure does not match expected LMT format")
-                st.info(structure_message)
-                st.write(f"Found tables: {', '.join(tables)}")
+            with tab1:
+                # Table selection
+                selected_table = st.selectbox("Select Table", tables)
                 
-            # Display database statistics and store in session state
-            st.subheader("Database Statistics")
-            db_stats = {}
-            for table in tables:
-                row_count = pd.read_sql(f"SELECT COUNT(*) as count FROM {table}", conn).iloc[0, 0]
-                st.write(f"Table `{table}`: {row_count:,} rows")
-                db_stats[table] = row_count
-            
-            # Store statistics in session state for persistence
-            st.session_state.db_stats = db_stats
+                # Row limit to prevent loading too much data
+                limit = st.slider("Maximum rows to display", 10, 5000, 1000)
                 
-        except Exception as e:
-            st.error(f"Failed to connect to the uploaded database: {str(e)}")
-            st.session_state.db_connection = None
-            st.session_state.valid_db = False
-            if os.path.exists(temp_db_path):
-                os.remove(temp_db_path)
-
-# Tab 3: Run SQL Queries
-with tab3:
-    st.header("Run SQL Queries")
-    
-    if st.session_state.db_connection is None:
-        st.warning("Please connect to a database first (using the 'Connect via File Path' or 'Connect via File Upload' tab)")
-    else:
-        st.markdown("""
-        Run SQL queries against your connected database. 
-        You can explore the data and extract specific information.
-        """)
-        
-        # Display table structure for reference
-        if st.session_state.tables:
-            with st.expander("Table Structure Reference"):
-                for table in st.session_state.tables:
-                    st.subheader(f"Table: {table}")
-                    table_info = get_table_info(st.session_state.db_connection, table)
-                    st.table(table_info)
-        
-        # SQL query input
-        sql_query = st.text_area(
-            "Enter your SQL query",
-            height=150,
-            help="Example: SELECT * FROM ANIMAL LIMIT 10"
-        )
-        
-        if st.button("Run Query"):
-            if sql_query:
-                try:
-                    # Execute the query and get the results
-                    result_df, message = execute_query(st.session_state.db_connection, sql_query)
-                    
-                    if result_df is not None:
-                        st.success(message)
-                        st.dataframe(result_df)
-                        
-                        # Option to download the results as CSV
-                        csv = result_df.to_csv(index=False)
-                        st.download_button(
-                            label="Download results as CSV",
-                            data=csv,
-                            file_name="query_results.csv",
-                            mime="text/csv"
-                        )
-                    else:
-                        st.info(message)
-                except Exception as e:
-                    st.error(f"Error executing query: {str(e)}")
-            else:
-                st.error("Please enter a SQL query")
-
-# Tab 4: Data Processing
-with tab4:
-    st.header("Data Processing")
-    
-    if st.session_state.db_connection is None:
-        st.warning("Please connect to a database first (using the 'Connect via File Path' or 'Connect via File Upload' tab)")
-    else:
-        # Section 1: Update ANIMAL Table with Metadata
-        st.subheader("1. Update ANIMAL Table Metadata")
-        st.markdown("""
-        Add metadata columns to ANIMAL table (SEX, AGE, GENOTYPE, SETUP) and provide an interface to edit them.
-        """)
-        
-        # Button to add metadata columns to ANIMAL table
-        add_animal_metadata_btn = st.button("Add Metadata Columns to ANIMAL Table")
-        
-        if add_animal_metadata_btn:
-            try:
-                cursor = st.session_state.db_connection.cursor()
-                sql_statements = get_add_animal_metadata_sql()
-                
-                for sql in sql_statements:
-                    try:
-                        cursor.execute(sql)
-                    except sqlite3.OperationalError as e:
-                        # Ignore "duplicate column" errors
-                        if "duplicate column" not in str(e):
-                            raise e
-                
-                st.session_state.db_connection.commit()
-                st.success("✅ Added metadata columns to ANIMAL table successfully!")
-                
-                # Update tables list
-                if "ANIMAL" not in st.session_state.tables:
-                    st.session_state.tables.append("ANIMAL")
-                    
-            except Exception as e:
-                st.error(f"Error adding metadata columns: {str(e)}")
-        
-        # Display ANIMAL table for editing
-        if "ANIMAL" in st.session_state.tables:
-            with st.expander("Edit ANIMAL Metadata", expanded=True):
-                try:
-                    # Get ANIMAL data
-                    animal_df = pd.read_sql("SELECT * FROM ANIMAL", st.session_state.db_connection)
-                    
-                    if len(animal_df) > 0:
-                        # Display current animal data
-                        st.subheader("Current Animal Data")
-                        st.dataframe(animal_df)
-                        
-                        # Let user select an animal to edit
-                        animal_ids = animal_df['ANIMAL'].tolist() if 'ANIMAL' in animal_df.columns else animal_df['ID'].tolist()
-                        selected_animal = st.selectbox("Select animal to edit:", animal_ids)
-                        
-                        # Get ID column name
-                        id_column = 'ANIMAL' if 'ANIMAL' in animal_df.columns else 'ID'
-                        
-                        # Create form for editing
-                        with st.form("edit_animal_form"):
-                            col1, col2 = st.columns(2)
-                            
-                            # Check if each column exists and get current value if it does
-                            with col1:
-                                sex_value = ""
-                                if 'SEX' in animal_df.columns:
-                                    current_sex = animal_df.loc[animal_df[id_column] == selected_animal, 'SEX'].values
-                                    sex_value = current_sex[0] if len(current_sex) > 0 and pd.notna(current_sex[0]) else ""
-                                sex = st.text_input("Sex:", value=sex_value)
-                                
-                                age_value = ""
-                                if 'AGE' in animal_df.columns:
-                                    current_age = animal_df.loc[animal_df[id_column] == selected_animal, 'AGE'].values
-                                    age_value = current_age[0] if len(current_age) > 0 and pd.notna(current_age[0]) else ""
-                                age = st.text_input("Age:", value=age_value)
-                            
-                            with col2:
-                                genotype_value = ""
-                                if 'GENOTYPE' in animal_df.columns:
-                                    current_genotype = animal_df.loc[animal_df[id_column] == selected_animal, 'GENOTYPE'].values
-                                    genotype_value = current_genotype[0] if len(current_genotype) > 0 and pd.notna(current_genotype[0]) else ""
-                                genotype = st.text_input("Genotype:", value=genotype_value)
-                                
-                                setup_value = ""
-                                if 'SETUP' in animal_df.columns:
-                                    current_setup = animal_df.loc[animal_df[id_column] == selected_animal, 'SETUP'].values
-                                    setup_value = current_setup[0] if len(current_setup) > 0 and pd.notna(current_setup[0]) else ""
-                                setup = st.text_input("Setup:", value=setup_value)
-                            
-                            submit_button = st.form_submit_button("Update Animal Metadata")
-                        
-                        if submit_button:
-                            try:
-                                cursor = st.session_state.db_connection.cursor()
-                                
-                                # Update metadata in ANIMAL table
-                                update_statement = f"""
-                                UPDATE ANIMAL
-                                SET SEX = ?,
-                                    AGE = ?,
-                                    GENOTYPE = ?,
-                                    SETUP = ?
-                                WHERE {id_column} = ?
-                                """
-                                
-                                cursor.execute(update_statement, (sex, age, genotype, setup, selected_animal))
-                                st.session_state.db_connection.commit()
-                                st.success(f"✅ Updated metadata for Animal {selected_animal}!")
-                                
-                                # Refresh animal data
-                                animal_df = pd.read_sql("SELECT * FROM ANIMAL", st.session_state.db_connection)
-                                st.dataframe(animal_df)
-                                
-                            except Exception as e:
-                                st.error(f"Error updating animal metadata: {str(e)}")
-                    else:
-                        st.warning("No animals found in the ANIMAL table.")
-                    
-                except Exception as e:
-                    st.error(f"Error retrieving ANIMAL table data: {str(e)}")
-        
-        # Section 2: EVENT_FILTERED Creation and Event Processing
-        st.divider()
-        st.subheader("2. Process Events")
-        st.markdown("""
-        Create EVENT_FILTERED table with merged events. The system will:
-        1. Unify events with the same name that are ≤30 frames (1 second) apart
-        2. Filter out events with duration <6 frames (<0.2 seconds)
-        3. Calculate durations and add timestamps
-        """)
-        
-        # Experiment start time picker
-        st.subheader("Experiment Start Time")
-        st.markdown("Set the experiment start time for timestamp calculations")
-        
-        # Let user select date and time
-        col1, col2 = st.columns(2)
-        with col1:
-            exp_date = st.date_input("Experiment Date", value=datetime.date.today())
-        with col2:
-            exp_time = st.time_input("Experiment Time", value=datetime.time(9, 0))
-        
-        # Combine date and time
-        exp_start = datetime.datetime.combine(exp_date, exp_time)
-        st.write(f"Selected experiment start: {exp_start.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        # FPS input
-        fps = st.number_input("Frames Per Second (FPS)", value=30.0, min_value=1.0, step=0.1)
-        
-        # Display excluded behaviors
-        with st.expander("Excluded Behaviors"):
-            st.write("The following behaviors will be excluded from processing:")
-            for behavior in EXCLUDED_BEHAVIORS:
-                st.write(f"- {behavior}")
-        
-        # Single button to process events
-        process_events_btn = st.button("Process Events", help="Create EVENT_FILTERED table and process events")
-        
-        if process_events_btn:
-            try:
-                cursor = st.session_state.db_connection.cursor()
-                
-                # Step 1: Create table
-                st.write("📊 Creating EVENT_FILTERED table...")
-                cursor.executescript(CREATE_EVENT_FILTERED_TABLE_SQL)
-                
-                # Step 2: Insert merged events
-                st.write("📥 Inserting merged events...")
-                insert_sql = get_insert_merged_events_sql()
-                cursor.execute(insert_sql)
-                event_count = cursor.rowcount
-                
-                # Step 3: Update timestamps
-                st.write("⏱️ Updating timestamps...")
-                update_sql = get_update_timestamps_sql(exp_start, fps)
-                cursor.execute(update_sql)
-                
-                # Step 4: Add event metadata
-                st.write("🧬 Adding event metadata...")
-                for letter in ['A', 'B', 'C', 'D']:
-                    sql_statements = get_event_metadata_sql(letter)
-                    for sql in sql_statements:
+                if st.button("View Table Data"):
+                    with st.spinner(f"Loading data from {selected_table}..."):
                         try:
-                            cursor.execute(sql)
-                        except sqlite3.OperationalError as e:
-                            # Ignore "duplicate column" errors
-                            if "duplicate column" not in str(e):
-                                raise e
-                
-                st.session_state.db_connection.commit()
-                
-                # Update table list if needed
-                if "EVENT_FILTERED" not in st.session_state.tables:
-                    st.session_state.tables.append("EVENT_FILTERED")
-                
-                st.success(f"""
-                ✅ Event processing completed successfully!
-                - Created EVENT_FILTERED table
-                - Inserted {event_count} merged events
-                - Updated timestamps based on experiment start: {exp_start.strftime('%Y-%m-%d %H:%M:%S')}
-                - Added animal metadata columns
-                
-                Event processing logic applied:
-                - Merged events of the same type separated by ≤30 frames (1 second)
-                - Filtered out events with duration <6 frames (0.2 seconds)
-                - Added timestamp calculations based on experiment start time
-                """)
-                
-                # Show sample results
-                sample_df = pd.read_sql("SELECT * FROM EVENT_FILTERED LIMIT 10", st.session_state.db_connection)
-                st.subheader("Sample Results")
-                st.dataframe(sample_df)
-                
-                # Show event statistics
-                with st.expander("View EVENT_FILTERED Table Statistics", expanded=True):
-                    try:
-                        count_df = pd.read_sql("SELECT COUNT(*) as count FROM EVENT_FILTERED", st.session_state.db_connection)
-                        event_count = count_df.iloc[0, 0]
-                        st.write(f"Total events in EVENT_FILTERED: {event_count:,}")
-                        
-                        behavior_counts = pd.read_sql(
-                            "SELECT name, COUNT(*) as count FROM EVENT_FILTERED GROUP BY name ORDER BY count DESC", 
-                            st.session_state.db_connection
-                        )
-                        st.subheader("Behavior Counts")
-                        st.dataframe(behavior_counts)
-                        
-                        # Bar chart of behavior counts
-                        st.bar_chart(behavior_counts.set_index('name'))
-                        
-                    except Exception as e:
-                        st.error(f"Error retrieving table statistics: {str(e)}")
-                
-            except Exception as e:
-                st.error(f"Error during event processing: {str(e)}")
-
-        # Section 3: Table Enhancement and Mouse ID Updates
-        st.divider()
-        st.subheader("3. Advanced Database Operations")
-        
-        col1, col2 = st.columns(2)
-        
-        # Column Management
-        with col1:
-            st.markdown("### Remove Columns")
-            st.markdown("Select a table and specify which columns to keep. All other columns will be removed.")
-            
-            # Table selector for column management
-            table_for_columns = st.selectbox(
-                "Select table for column management:",
-                st.session_state.tables,
-                key="table_for_columns"
-            )
-            
-            # Get columns for the selected table
-            columns = []
-            if table_for_columns:
-                try:
-                    table_info = get_table_info(st.session_state.db_connection, table_for_columns)
-                    columns = [row['Column Name'] for row in table_info.to_dict('records')]
-                    
-                    # Multi-select for columns to keep
-                    columns_to_keep = st.multiselect(
-                        "Select columns to keep (all others will be removed):",
-                        columns,
-                        default=columns[:1]  # Default to keeping the first column (usually ID)
-                    )
-                    
-                    if st.button("Remove Unselected Columns"):
-                        if not columns_to_keep:
-                            st.error("You must select at least one column to keep!")
-                        else:
-                            try:
-                                # Call the remove_columns function
-                                success, message = remove_columns(
-                                    st.session_state.db_path, 
-                                    table_for_columns, 
-                                    columns_to_keep
-                                )
-                                
-                                if success:
-                                    st.success(message)
-                                    # Refresh the table info
-                                    table_info = get_table_info(st.session_state.db_connection, table_for_columns)
-                                    st.dataframe(table_info)
-                                else:
-                                    st.error(message)
-                            except Exception as e:
-                                st.error(f"Error removing columns: {str(e)}")
-                except Exception as e:
-                    st.error(f"Error retrieving table columns: {str(e)}")
-        
-        # Row Management
-        with col2:
-            st.markdown("### Delete Rows")
-            st.markdown("Delete rows from a table based on specific ID values.")
-            
-            # Table selector for row deletion
-            table_for_rows = st.selectbox(
-                "Select table for row deletion:",
-                st.session_state.tables,
-                key="table_for_rows"
-            )
-            
-            # Get ID columns for the selected table
-            id_columns = []
-            if table_for_rows:
-                try:
-                    table_info = get_table_info(st.session_state.db_connection, table_for_rows)
-                    # Identify potential ID columns (look for ID in name)
-                    id_columns = [row['Column Name'] for row in table_info.to_dict('records') 
-                                 if 'id' in row['Column Name'].lower() or 'animal' in row['Column Name'].lower()]
-                    
-                    # If no ID columns found, show all columns
-                    if not id_columns:
-                        id_columns = [row['Column Name'] for row in table_info.to_dict('records')]
-                    
-                    # Select ID column
-                    id_column = st.selectbox(
-                        "Select ID column for filtering rows:",
-                        id_columns,
-                        key="id_column_for_deletion"
-                    )
-                    
-                    # Input for ID value
-                    id_value = st.text_input(
-                        f"Enter {id_column} value to delete rows:",
-                        key="id_value_for_deletion"
-                    )
-                    
-                    # Add a preview option
-                    if id_value and st.button("Preview Rows to Delete"):
-                        try:
-                            # Show preview of rows that will be deleted
-                            preview_query = f"SELECT * FROM {table_for_rows} WHERE {id_column} = ?"
-                            cursor = st.session_state.db_connection.cursor()
-                            cursor.execute(preview_query, (id_value,))
-                            preview_rows = cursor.fetchall()
+                            start_time = time.time()
+                            df = get_table_data(selected_db, selected_table, limit)
+                            load_time = time.time() - start_time
                             
-                            if preview_rows:
-                                # Get column names
-                                columns = [description[0] for description in cursor.description]
-                                # Convert to dataframe
-                                preview_df = pd.DataFrame(preview_rows, columns=columns)
-                                st.write(f"Found {len(preview_rows)} rows that will be deleted:")
-                                st.dataframe(preview_df)
-                            else:
-                                st.warning(f"No rows found with {id_column} = {id_value}")
-                        except Exception as e:
-                            st.error(f"Error previewing rows: {str(e)}")
-                    
-                    if id_value and st.button("Delete Rows", key="delete_rows_button"):
-                        try:
-                            # Call the delete_rows function
-                            success, message = delete_rows(
-                                st.session_state.db_path,
-                                table_for_rows,
-                                id_column,
-                                id_value
+                            st.success(f"Data loaded successfully in {load_time:.2f} seconds")
+                            st.write(f"Showing {len(df)} rows (limited to {limit})")
+                            st.dataframe(df)
+                            
+                            # Download option
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                label="Download data as CSV",
+                                data=csv,
+                                file_name=f"{selected_table}.csv",
+                                mime="text/csv"
                             )
-                            
-                            if success:
-                                st.success(message)
-                                # Show updated row count
-                                count_query = f"SELECT COUNT(*) as count FROM {table_for_rows}"
-                                count_result = pd.read_sql(count_query, st.session_state.db_connection)
-                                st.write(f"Current row count in {table_for_rows}: {count_result.iloc[0, 0]}")
-                            else:
-                                st.error(message)
                         except Exception as e:
-                            st.error(f"Error deleting rows: {str(e)}")
-                except Exception as e:
-                    st.error(f"Error retrieving table information: {str(e)}")
-        
-        # Section for Mouse ID Updates
-        st.markdown("### Update Mouse IDs")
-        st.markdown("""
-        This tool allows you to update a mouse ID across all related tables in the database.
-        It will update the ID in the ANIMAL table and all related tables with idanimal fields.
-        """)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Input for old mouse ID
-            old_id = st.text_input(
-                "Old Mouse ID:",
-                help="Enter the current ID of the mouse that needs to be updated"
-            )
-        
-        with col2:
-            # Input for new mouse ID
-            new_id = st.text_input(
-                "New Mouse ID:",
-                help="Enter the new ID to assign to this mouse"
-            )
-        
-        # Dry run option
-        dry_run = st.checkbox(
-            "Dry Run (preview changes without modifying database)",
-            value=True,
-            help="Check this to see what would be updated without making actual changes"
-        )
-        
-        if old_id and new_id and st.button("Update Mouse ID"):
-            try:
-                with st.spinner("Processing ID update..."):
-                    # Check if IDs are valid integers
+                            st.error(f"Error loading table data: {e}")
+            
+            with tab2:
+                # Schema viewer
+                selected_table_schema = st.selectbox("Select Table for Schema", tables, key="schema_table")
+                
+                if st.button("View Schema"):
                     try:
-                        old_id_int = int(old_id)
-                        new_id_int = int(new_id)
-                    except ValueError:
-                        st.error("Mouse IDs must be integers")
-                        st.stop()
-                    
-                    # Use StringIO to capture stdout
-                    import io
-                    from contextlib import redirect_stdout
-                    
-                    output = io.StringIO()
-                    with redirect_stdout(output):
-                        # Call the update_mouse_id function
-                        update_mouse_id(st.session_state.db_path, old_id_int, new_id_int, dry_run)
-                    
-                    # Display the output
-                    output_text = output.getvalue()
-                    if dry_run:
-                        st.info("Dry Run Results (no changes made to database):")
-                    else:
-                        st.success("ID Update Completed:")
-                    
-                    # Format the output as a code block
-                    st.code(output_text)
-                    
-                    # If not a dry run, check the ANIMAL table
-                    if not dry_run:
-                        # Verify the change in the ANIMAL table
-                        animal_query = "SELECT * FROM ANIMAL WHERE ID = ?"
-                        new_animal = pd.read_sql(animal_query, st.session_state.db_connection, params=(new_id_int,))
+                        schema = get_table_schema(selected_db, selected_table_schema)
                         
-                        if not new_animal.empty:
-                            st.write("Updated animal record:")
-                            st.dataframe(new_animal)
-                        else:
-                            st.warning(f"Could not find animal with new ID {new_id_int} in ANIMAL table after update.")
-                
-            except Exception as e:
-                st.error(f"Error updating mouse ID: {str(e)}")
-
-        # Section for CSV File Operations
-        st.divider()
-        st.subheader("4. CSV File Operations")
-        st.markdown("""
-        This section allows you to manipulate CSV files directly without importing them into a database.
-        You can remove columns and delete rows from CSV files and then download the modified files.
-        """)
-
-        # Initialize session state for CSV operations
-        if 'csv_df' not in st.session_state:
-            st.session_state.csv_df = None
-        if 'csv_filename' not in st.session_state:
-            st.session_state.csv_filename = None
-        if 'csv_modified' not in st.session_state:
-            st.session_state.csv_modified = False
-
-        # CSV file upload
-        uploaded_csv = st.file_uploader("Upload a CSV file", type="csv", key="csv_uploader")
-        
-        if uploaded_csv is not None:
-            try:
-                # Read the CSV file
-                df = pd.read_csv(uploaded_csv)
-                
-                # Store the DataFrame in session state
-                st.session_state.csv_df = df
-                st.session_state.csv_filename = uploaded_csv.name
-                st.session_state.csv_modified = False
-                
-                # Show success message
-                st.success(f"Successfully loaded CSV: {uploaded_csv.name}")
-                st.write(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-                
-                # Preview the data
-                with st.expander("Preview data", expanded=True):
-                    st.dataframe(df.head(10))
-                
-            except Exception as e:
-                st.error(f"Error loading CSV file: {str(e)}")
-        
-        # If a CSV file is loaded, show the operations
-        if st.session_state.csv_df is not None:
-            st.subheader(f"Operations for {st.session_state.csv_filename}")
-            
-            # Create tabs for different operations
-            csv_tab1, csv_tab2 = st.tabs(["Remove Columns", "Delete Rows"])
-            
-            # Tab 1: Remove Columns
-            with csv_tab1:
-                st.markdown("### Remove Columns")
-                st.markdown("Select columns to keep. All other columns will be removed.")
-                
-                # Get columns from the DataFrame
-                columns = list(st.session_state.csv_df.columns)
-                
-                # Multi-select for columns to keep
-                columns_to_keep = st.multiselect(
-                    "Select columns to keep (all others will be removed):",
-                    columns,
-                    default=columns[:1]  # Default to keeping the first column
-                )
-                
-                if st.button("Remove Unselected Columns", key="csv_remove_columns"):
-                    if not columns_to_keep:
-                        st.error("You must select at least one column to keep!")
-                    else:
-                        try:
-                            # Call the remove_columns_csv function
-                            success, new_df, message = remove_columns_csv(
-                                st.session_state.csv_df, 
-                                columns_to_keep
-                            )
-                            
-                            if success:
-                                # Update the DataFrame in session state
-                                st.session_state.csv_df = new_df
-                                st.session_state.csv_modified = True
-                                st.success(message)
-                                
-                                # Show the updated DataFrame
-                                st.dataframe(new_df.head(10))
-                                st.info(f"New shape: {new_df.shape[0]} rows × {new_df.shape[1]} columns")
-                            else:
-                                st.error(message)
-                        except Exception as e:
-                            st.error(f"Error removing columns: {str(e)}")
-            
-            # Tab 2: Delete Rows
-            with csv_tab2:
-                st.markdown("### Delete Rows")
-                st.markdown("Delete rows based on column value matches.")
-                
-                # Get columns from the DataFrame
-                columns = list(st.session_state.csv_df.columns)
-                
-                # Select column for filtering
-                filter_column = st.selectbox(
-                    "Select column for filtering rows:",
-                    columns,
-                    key="csv_filter_column"
-                )
-                
-                # Get unique values from the selected column
-                unique_values = st.session_state.csv_df[filter_column].unique()
-                if len(unique_values) > 100:
-                    # Text input if too many unique values
-                    filter_value = st.text_input(
-                        f"Enter {filter_column} value to delete rows (many unique values):",
-                        key="csv_filter_value_input"
-                    )
-                else:
-                    # Dropdown if manageable number of unique values
-                    filter_value = st.selectbox(
-                        f"Select {filter_column} value to delete rows:",
-                        unique_values,
-                        key="csv_filter_value_select"
-                    )
-                
-                # Add a preview option
-                if filter_column and filter_value and st.button("Preview Rows to Delete", key="csv_preview_delete"):
-                    try:
-                        # Show preview of rows that will be deleted
-                        preview_df = st.session_state.csv_df[st.session_state.csv_df[filter_column] == filter_value]
-                        
-                        if not preview_df.empty:
-                            st.write(f"Found {len(preview_df)} rows that will be deleted:")
-                            st.dataframe(preview_df.head(10))
-                            if len(preview_df) > 10:
-                                st.info(f"Showing first 10 of {len(preview_df)} matching rows")
-                        else:
-                            st.warning(f"No rows found with {filter_column} = {filter_value}")
+                        # Create a DataFrame for display
+                        schema_df = pd.DataFrame(schema)
+                        st.write(f"Schema for table: {selected_table_schema}")
+                        st.dataframe(schema_df)
                     except Exception as e:
-                        st.error(f"Error previewing rows: {str(e)}")
-                
-                if filter_column and filter_value and st.button("Delete Rows", key="csv_delete_rows"):
-                    try:
-                        # Call the delete_rows_csv function
-                        success, new_df, message = delete_rows_csv(
-                            st.session_state.csv_df,
-                            filter_column,
-                            filter_value
-                        )
-                        
-                        if success:
-                            # Update the DataFrame in session state
-                            st.session_state.csv_df = new_df
-                            st.session_state.csv_modified = True
-                            st.success(message)
-                            
-                            # Show the updated DataFrame
-                            st.dataframe(new_df.head(10))
-                            st.info(f"New shape: {new_df.shape[0]} rows × {new_df.shape[1]} columns")
-                        else:
-                            st.error(message)
-                    except Exception as e:
-                        st.error(f"Error deleting rows: {str(e)}")
-            
-            # Download the modified CSV
-            if st.session_state.csv_modified:
-                st.subheader("Download Modified CSV")
-                
-                # Generate a new filename
-                basename = os.path.splitext(st.session_state.csv_filename)[0]
-                new_filename = f"{basename}_modified.csv"
-                
-                # Convert the DataFrame to CSV
-                csv_data = st.session_state.csv_df.to_csv(index=False)
-                
-                # Create a download button
-                st.download_button(
-                    label="Download Modified CSV",
-                    data=csv_data,
-                    file_name=new_filename,
-                    mime="text/csv"
-                )
-        else:
-            st.info("Upload a CSV file to perform operations on it")
+                        st.error(f"Error loading schema: {e}")
+        
+    except Exception as e:
+        st.error(f"Error accessing database {selected_db}: {e}")
+
+# Alternative upload option (keeping this for compatibility)
+st.markdown("---")
+st.header("Alternative: Upload a Database File")
+st.info("You can also upload a SQLite database file directly if it's not in your configured directory.")
+
+uploaded_file = st.file_uploader("Upload SQLite Database", type=["db", "sqlite", "sqlite3"])
+
+if uploaded_file is not None:
+    # Save the uploaded file to a temporary location
+    temp_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp_uploaded.db")
+    
+    with open(temp_db_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    st.success(f"Database uploaded successfully: {uploaded_file.name}")
+    
+    # Connect to the uploaded database
+    conn = sqlite3.connect(temp_db_path)
+    cursor = conn.cursor()
+    
+    # Get list of tables
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = [table[0] for table in cursor.fetchall()]
+    
+    if not tables:
+        st.warning("No tables found in the uploaded database")
+    else:
+        st.write("Tables in the database:")
+        selected_table = st.selectbox("Select Table", tables, key="uploaded_table")
+        
+        if st.button("View Uploaded Data"):
+            # Get the data
+            data = pd.read_sql(f"SELECT * FROM {selected_table} LIMIT 1000", conn)
+            st.dataframe(data)
+    
+    conn.close()
 
 # Display footer
 st.markdown("---")
