@@ -23,7 +23,7 @@ project_path = os.path.dirname(streamlit_app_path)
 sys.path.append(project_path)
 
 # Import config for data directory access
-from config import DATA_DIR, validate_data_directory
+from config import DATA_DIR, validate_data_directory, DEFAULT_DATABASE
 from utils.db_direct_access import get_available_databases, connect_to_database, get_tables
 
 # Import all modular components
@@ -199,48 +199,77 @@ with tab1:
                     format_func=lambda x: x
                 )
                 
-                # Connect button for data directory method
-                if st.button("Connect to Database", key="connect_dir_button"):
-                    try:
-                        # Get the full path to the database
-                        db_path = os.path.join(DATA_DIR, selected_db)
-                        st.session_state.db_path = db_path
-                        
-                        # Attempt to connect to the database
-                        conn = get_db_connection(db_path)
-                        
-                        # Check if it's a valid LMT database
-                        is_valid_lmt, tables, structure_message = check_lmt_database_structure(conn)
-                        st.session_state.valid_db = is_valid_lmt
-                        st.session_state.tables = tables
-                        st.session_state.structure_message = structure_message
-                        
-                        # Show success message with database information
-                        st.success(f"Successfully connected to database: {selected_db}")
-                        
-                        # Get database statistics and store in session state
-                        st.session_state.db_stats = get_database_statistics(conn, tables)
-                        
-                        # Always close the connection when done
-                        conn.close()
-                        
-                        # Display information about tables
-                        if is_valid_lmt:
-                            st.write("✅ Valid LMT database structure detected")
-                        else:
-                            st.warning("⚠️ Database structure does not match expected LMT format")
-                            st.info(structure_message)
+                # Add option to set as default database
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    # Connect button for data directory method
+                    if st.button("Connect to Database", key="connect_dir_button"):
+                        try:
+                            # Get the full path to the database
+                            db_path = os.path.join(DATA_DIR, selected_db)
+                            st.session_state.db_path = db_path
                             
-                        st.write(f"Found tables: {', '.join(tables)}")
-                        
-                        # Display database statistics
-                        st.subheader("Database Statistics")
-                        for table, count in st.session_state.db_stats.items():
-                            st.write(f"Table `{table}`: {count:,} rows")
-                        
-                    except Exception as e:
-                        st.error(f"Failed to connect to the database: {str(e)}")
-                        st.session_state.valid_db = False
+                            # Attempt to connect to the database
+                            conn = get_db_connection(db_path)
+                            
+                            # Check if it's a valid LMT database
+                            is_valid_lmt, tables, structure_message = check_lmt_database_structure(conn)
+                            st.session_state.valid_db = is_valid_lmt
+                            st.session_state.tables = tables
+                            st.session_state.structure_message = structure_message
+                            
+                            # Show success message with database information
+                            st.success(f"Successfully connected to database: {selected_db}")
+                            
+                            # Get database statistics and store in session state
+                            st.session_state.db_stats = get_database_statistics(conn, tables)
+                            
+                            # Always close the connection when done
+                            conn.close()
+                            
+                            # Display information about tables
+                            if is_valid_lmt:
+                                st.write("✅ Valid LMT database structure detected")
+                            else:
+                                st.warning("⚠️ Database structure does not match expected LMT format")
+                                
+                            st.write(f"Found tables: {', '.join(tables)}")
+                            
+                            # Display database statistics
+                            st.subheader("Database Statistics")
+                            for table, count in st.session_state.db_stats.items():
+                                st.write(f"Table `{table}`: {count:,} rows")
+                            
+                        except Exception as e:
+                            st.error(f"Failed to connect to the database: {str(e)}")
+                            st.session_state.valid_db = False
+                with col2:
+                    # Set as default database button
+                    if st.button("Set as Default", key="set_default_db_button"):
+                        try:
+                            # Update the config.py file
+                            config_path = os.path.join(streamlit_app_path, "config.py")
+                            with open(config_path, "r") as f:
+                                config_content = f.readlines()
+                            
+                            # Find the DEFAULT_DATABASE line and replace it
+                            for i, line in enumerate(config_content):
+                                if line.strip().startswith("DEFAULT_DATABASE"):
+                                    config_content[i] = f'DEFAULT_DATABASE = "{selected_db}"\n'
+                                    break
+                            
+                            # Write the updated config back
+                            with open(config_path, "w") as f:
+                                f.writelines(config_content)
+                            
+                            st.success(f"✅ Set {selected_db} as the default database on startup!")
+                            st.info("Restart the app for this change to take effect.")
+                        except Exception as e:
+                            st.error(f"Failed to set default database: {str(e)}")
+                
+                # Show the current default database
+                if 'DEFAULT_DATABASE' in globals() and DEFAULT_DATABASE is not None:
+                    st.info(f"Current default database: {DEFAULT_DATABASE}")
         else:
             st.error(message)
             st.info("Please check your configuration in the config.py file.")
